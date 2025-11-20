@@ -1,3 +1,8 @@
+## 0.1.9 - 2025-11-21
+
+- OTA: Testrelease för automatisk uppdatering från 0.1.8 (inga funktionsändringar).
+- Installer: fortsätter endast med NSIS (ingen portable).
+
 ## 0.1.8 - 2025-11-20
 
 - CI: Åtgärdade GitHub Release-rättigheter (`permissions: contents: write`, `fetch-depth: 0`).

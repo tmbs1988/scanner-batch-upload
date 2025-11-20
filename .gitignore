@@ -1,0 +1,17 @@
+# Node / JS
+node_modules/
+*.log
+*.log.*
+npm-debug.log*
+yarn-error.log*
+pnpm-lock.yaml
+package-lock.json
+dist/
+out/
+build/
+.parcel-cache/
+.vite/
+.next/
+.DS_Store
+
+

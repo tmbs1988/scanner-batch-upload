@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="sv">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' data: https: http:; img-src 'self' data: https: http:; style-src 'self' 'unsafe-inline';" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Scanner Batch Uploader (skelett)</title>
+    <style>
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; color: #111; }
+      header { padding: 12px 16px; background: #0f172a; color: #fff; }
+      main { padding: 16px; display: grid; gap: 16px; }
+      .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; }
+      label { display: block; font-weight: 600; margin-bottom: 6px; }
+      input[type="text"], input[type="file"] { width: 100%; padding: 8px; border: 1px solid #e5e7eb; border-radius: 6px; }
+      .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+      button { background: #2563eb; color: #fff; border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; }
+      button.inner { background: #0ea5e9; }
+      button.secondary { background: #64748b; }
+      textarea { width: 100%; height: 220px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 12px; }
+      .small { font-size: 12px; color: #6b7280; }
+      .actions { display: flex; gap: 8px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Scanner Batch Uploader (skelett)</h1>
+    </header>
+    <main>
+      <section class="card">
+        <div class="row">
+          <div>
+            <label>Backend base URL</label>
+            <input id="baseUrl" type="text" placeholder="https://your-deployment.example.com" />
+            <div class="small">Använd <code>http://localhost:3000</code> i dev</div>
+          </div>
+          <div>
+            <label>Scanner serial (store_name)</label>
+            <input id="storeName" type="text" placeholder="SN12345" />
+            <div class="small">Används server-side för att mappa till rätt scannerId</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="row">
+          <div>
+            <label>Välj dagsmapp (använd Ctrl för flera)</label>
+            <input id="dirInput" type="file" webkitdirectory directory multiple />
+            <div class="small">Ex: D:\u005c3D Fotteknik Clinic\u005cscanner_data\u005c2025\u005c11\u005c19</div>
+          </div>
+          <div>
+            <label>Välj feetbase.csv</label>
+            <input id="csvInput" type="file" accept=".csv,text/csv" />
+          </div>
+        </div>
+        <div class="actions">
+          <button id="btnDryRun">Torrkörning</button>
+          <button id="btnStart" class="secondary">Starta uppladdning</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <label>Logg</label>
+        <textarea id="log" readonly></textarea>
+      </section>
+    </main>
+
+    <script type="module">
+      const logEl = document.getElementById('log');
+      function logLine(msg) {
+        const ts = new Date().toISOString();
+        logLine.count = (logLine.count||0)+1;
+        logEl.value += `[${ts}] ${msg}\n`;
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+
+      function getBaseUrl() { return document.getElementById('baseUrl').value.trim(); }
+      function getStoreName() { return document.getElementById('storeName').value.trim(); }
+
+      function parseCsvLines(text) {
+        return text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+      }
+
+      function whitelistFiles(fileList) {
+        const result = [];
+        for (const f of Array.from(fileList)) {
+          const rel = f.webkitRelativePath || f.name || '';
+          const lower = rel.toLowerCase();
+          const isReport = lower.endsWith('.pdf');
+          const isModel = lower.endsWith('.oex') || lower.endsWith('.stl') || lower.endsWith('.obj');
+          const isImage = /\.(bmp|jpg|jpeg|png)$/i.test(lower) && (lower.includes('arch') || lower.includes('foot3d') || lower.includes('pronator'));
+          if (isReport || isModel || isImage) {
+            result.push({ file: f, relPath: rel, isReport, isModel, isImage });
+          }
+        }
+        return result;
+      }
+
+      function groupByDir(whitelisted) {
+        const groups = new Map();
+        for (const item of whitelisted) {
+          const parts = item.relPath.split(/[\\/]/);
+          const dir = parts.slice(0, -1).join('/');
+          if (!groups.has(dir)) groups.set(dir, []);
+          groups.get(dir).push(item);
+        }
+        return groups;
+      }
+
+      async function fileToBase64(file) {
+        return new Promise((resolve, reject) => {
+          const r = new FileReader();
+          r.onload = () => {
+            const res = String(r.result || '');
+            const base64 = res.includes(',') ? res.split(',')[1] : res;
+            resolve(base64);
+          };
+          r.onerror = reject;
+          r.readAsDataURL(file);
+        });
+      }
+
+      async function postJson(url, body) {
+        const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        return data;
+      }
+
+      document.getElementById('btnDryRun').addEventListener('click', async () => {
+        const dirInput = document.getElementById('dirInput');
+        const csvInput = document.getElementById('csvInput');
+        if (!dirInput.files || dirInput.files.length === 0) { logLine('Välj en dagsmapp först.'); return; }
+        if (!csvInput.files || csvInput.files.length === 0) { logLine('Välj feetbase.csv.'); return; }
+        const csvText = await csvInput.files[0].text();
+        const lines = parseCsvLines(csvText);
+        logLine(`Läste ${lines.length} CSV-rader.`);
+
+        const whitelisted = whitelistFiles(dirInput.files);
+        logLine(`Hittade ${whitelisted.length} filer (whitelistade).`);
+        const groups = groupByDir(whitelisted);
+        for (const [dir, items] of groups.entries()) {
+          const report = items.filter(i => i.isReport).length;
+          const models = items.filter(i => i.isModel).length;
+          const imgs = items.filter(i => i.isImage).length;
+          logLine(`[${dir}] report=${report}, models=${models}, images=${imgs}`);
+        }
+        logLine('Torrkörning klar.');
+      });
+
+      document.getElementById('btnStart').addEventListener('click', async () => {
+        const baseUrl = getBaseUrl();
+        const store = getStoreName();
+        const dirInput = document.getElementById('dirInput');
+        const csvInput = document.getElementById('csvInput');
+        if (!baseUrl || !store) { logLine('Fyll i Base URL och store_name.'); return; }
+        if (!dirInput.files || dirInput.files.length === 0) { logLine('Välj en dagsmapp.'); return; }
+        if (!csvInput.files || csvInput.files.length === 0) { logLine('Välj feetbase.csv.'); return; }
+
+        const csvText = await csvInput.files[0].text();
+        const lines = parseCsvLines(csvText);
+        logLine(`Startar batch. CSV-rader: ${lines.length}`);
+
+        const whitelisted = whitelistFiles(dirInput.files);
+        const groups = groupByDir(whitelisted);
+        let csvIndex = 0;
+
+        for (const [dir, items] of groups.entries()) {
+          try {
+            logLine(`Bearbetar ${dir}...`);
+            const dirName = (dir.split('/').pop() || '').trim();
+            const parts = dirName.split(' ');
+            const phone = (parts[0] && /[0-9+]/.test(parts[0][0])) ? parts[0] : '';
+            const user_name = phone ? parts.slice(1).join(' ') : dirName;
+            const scanTime = new Date(Math.max(...items.map(i => i.file.lastModified))).toISOString();
+
+            // INIT (ensure transmission + optional feetdata)
+            const initUrl = `${baseUrl}/api/scanners/upload-manual-file`;
+            const feetLines = lines.slice(csvIndex, Math.min(csvIndex + 2, lines.length));
+            csvIndex += 2;
+            const initResp = await postJson(initUrl, {
+              store_name: store,
+              user_name,
+              phone,
+              scanTime,
+              csvText: feetLines.join('\n')
+            });
+            const transmissionId = initResp.transmissionId || initResp.transmission_id || initResp.id; // tolerate variants
+            const scannerId = initResp.scannerId;
+            if (!transmissionId || !scannerId) { throw new Error('Kunde inte skapa/hitta transmission'); }
+            logLine(`Transmission: ${transmissionId}`);
+
+            // UPLOAD files
+            for (const item of items) {
+              const base64 = await fileToBase64(item.file);
+              const filename = (item.relPath.split(/[/\\]/).pop()) || item.file.name;
+              const uploadResp = await postJson(`${baseUrl}/api/scanners/upload-manual-file`, {
+                transmissionId,
+                scannerId,
+                filename,
+                contentType: item.file.type || (item.isImage ? 'image/bmp' : 'application/octet-stream'),
+                dataBase64: base64
+              });
+              logLine(`Uppladdad: ${filename}`);
+            }
+
+            // FINALIZE – enqueue processing job
+            await postJson(`${baseUrl}/api/scanners/upload-manual-file`, {
+              transmissionId,
+              scannerId,
+              finalize: true
+            });
+            logLine('Jobb skapat och bearbetning triggas.');
+          } catch (e) {
+            logLine(`Fel i ${dir}: ${e.message || e}`);
+          }
+        }
+
+        logLine('Batch klar (uppladdning initierad). Cron/processing slutför.');
+      });
+    </script>
+  </body>
+</html>
+
+

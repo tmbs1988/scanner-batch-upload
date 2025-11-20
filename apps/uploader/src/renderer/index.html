@@ -1,0 +1,683 @@
+<!doctype html>
+<html lang="sv">
+  <head>
+    <meta charset="utf-8" />
+    <!-- CSP removed for Electron packaged app to avoid blocking local scripts -->
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Scanner Batch Uploader</title>
+    <style>
+      /* Färger matchar huvudappens HSL‑variabler i src/styles/globals.css */
+      :root {
+        color-scheme: light dark;
+        --bg: hsl(220 25% 97%);
+        --text: hsl(220 45% 15%);
+        --header-bg: hsl(220 45% 8%);
+        --card-bg: hsl(0 0% 100%);
+        --border: hsl(220 25% 92%);
+        --muted: hsl(220 15% 45%);
+        --btn-primary: hsl(28 100% 50%);
+        --btn-secondary: hsl(220 25% 40%);
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: hsl(220 45% 5%);
+          --text: hsl(220 25% 97%);
+          --header-bg: hsl(220 45% 8%);
+          --card-bg: hsl(220 45% 8%);
+          --border: hsl(220 45% 15%);
+          --muted: hsl(220 25% 70%);
+          --btn-primary: hsl(28 100% 50%);
+          --btn-secondary: hsl(220 45% 30%);
+        }
+      }
+      html, body { height: 100%; overflow: hidden; }
+      body {
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        margin: 0;
+        color: var(--text);
+        background: var(--bg);
+        display: flex;
+        flex-direction: column;
+      }
+      header { padding: 12px 16px; background: var(--header-bg); color: #fff; flex: 0 0 auto; }
+      main {
+        padding: 16px;
+        display: grid;
+        gap: 16px;
+        max-width: 1024px;
+        margin: 0 auto;
+        flex: 1 1 auto;
+        box-sizing: border-box;
+        overflow: auto;
+        overscroll-behavior: contain;
+        padding-bottom: 48px;
+      }
+      .card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 16px; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
+      label { display: block; font-weight: 600; margin-bottom: 6px; }
+      input[type="text"], input[type="file"] {
+        width: 100%;
+        padding: 8px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        box-sizing: border-box;
+        background: var(--card-bg);
+        color: var(--text);
+      }
+      .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+      button { background: var(--btn-primary); color: #fff; border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; }
+      button.secondary { background: var(--btn-secondary); }
+      button:hover { filter: brightness(1.05); }
+      button:active { filter: brightness(0.95); }
+      textarea {
+        width: 100%;
+        height: clamp(140px, 30vh, 280px);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 12px;
+        box-sizing: border-box;
+        background: var(--card-bg);
+        color: var(--text);
+        border: 1px solid var(--border);
+      }
+      .small { font-size: 12px; color: var(--muted); }
+      .actions { display: flex; gap: 8px; }
+      @media (max-width: 720px) {
+        .row { grid-template-columns: 1fr; }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Scanner Batch Uploader</h1>
+    </header>
+    <main>
+      <section class="card">
+        <div class="row">
+          <div id="baseUrlWrap">
+            <label>Backend base URL</label>
+            <input id="baseUrl" type="text" placeholder="http://localhost:3000" />
+            <div class="small">Använd <code>http://localhost:3000</code> i dev</div>
+          </div>
+          <div>
+            <label>Scanner serial (store_name)</label>
+            <input id="storeName" type="text" placeholder="SN12345" />
+            <div class="small">Används för att mappa till rätt scanner/klinik</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="row">
+          <div>
+            <label>Välj dagsmapp (använd Ctrl för flera)</label>
+            <input id="dirInput" type="file" webkitdirectory directory multiple />
+            <div class="small">Ex: D:\3D Fotteknik Clinic\scanner_data\2025\11\19</div>
+          </div>
+          <div>
+            <label>Välj feetbase.csv</label>
+            <input id="csvInput" type="file" accept=".csv,text/csv" />
+          </div>
+        </div>
+        <div class="actions">
+          <button id="btnDryRun">Torrkörning</button>
+          <button id="btnStart" class="secondary">Starta uppladdning</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <label>Logg</label>
+        <textarea id="log" readonly></textarea>
+        <div class="actions" style="margin-top:8px;align-items:center">
+          <span id="logPath" class="small" style="flex:1 1 auto;"></span>
+          <button id="btnOpenLogs" class="secondary">Öppna loggmapp</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h3 style="margin-top:0">Automatiskt läge</h3>
+        <div class="row">
+          <div>
+            <label>Rotmapp</label>
+            <input id="rootDir" type="text" placeholder="D:\LSF350" />
+            <div class="small">Sökvägsstruktur: \YYYY\MM\DD\<telefon_namn></div>
+          </div>
+          <div>
+            <label>Alternativ</label>
+            <div style="margin-bottom:6px"><input id="includeYesterday" type="checkbox" /> Ta med gårdagen</div>
+            <div class="row" style="grid-template-columns: auto 1fr; align-items: center;">
+              <label for="dailyTime" style="margin:0">Körtid</label>
+              <input id="dailyTime" type="time" value="01:30" />
+            </div>
+          </div>
+        </div>
+        <div class="actions" style="margin-top:10px">
+          <button id="btnAuto">Kör automatisk uppladdning</button>
+          <button id="btnInstallSched" class="secondary">Schemalägg dagligen</button>
+          <button id="btnRemoveSched" class="secondary">Ta bort schema</button>
+        </div>
+      </section>
+    </main>
+
+    <script type="module">
+      const logEl = document.getElementById('log');
+      function logLine(msg) {
+        const ts = new Date().toISOString();
+        logEl.value += `[${ts}] ${msg}\n`;
+        logEl.scrollTop = logEl.scrollHeight;
+        if (window.uploader && window.uploader.appendLog) {
+          try { window.uploader.appendLog(msg); } catch {}
+        }
+      }
+      // Global felhookar så att dolda fel syns i loggen
+      window.addEventListener('error', (e) => {
+        try { logLine(`JS-error: ${e?.message || e}`); } catch {}
+      });
+      window.addEventListener('unhandledrejection', (e) => {
+        try { logLine(`Promise-rejection: ${e?.reason?.message || e?.reason || e}`); } catch {}
+      });
+      const BASE_KEY = 'cfg_baseUrl';
+      const STORE_KEY = 'cfg_storeName';
+      const baseUrlEl = document.getElementById('baseUrl');
+      const storeEl = document.getElementById('storeName');
+      const baseUrlWrap = document.getElementById('baseUrlWrap');
+      const logPathEl = document.getElementById('logPath');
+      if (window.uploader && window.uploader.getDefaultLogDir) {
+        try { logPathEl.textContent = `Loggar sparas i: ${window.uploader.getDefaultLogDir()}`; } catch {}
+      }
+      // Load persisted config
+      try {
+        baseUrlEl.value = localStorage.getItem(BASE_KEY) || 'https://app.3dfotteknik.se';
+      } catch {
+        baseUrlEl.value = 'https://app.3dfotteknik.se';
+      }
+      storeEl.value = localStorage.getItem(STORE_KEY) || '';
+      function getBaseUrl()  { return baseUrlEl.value.trim() || 'https://app.3dfotteknik.se'; }
+      function getStoreName(){ return storeEl.value.trim(); }
+      baseUrlEl.addEventListener('change', () => { localStorage.setItem(BASE_KEY, getBaseUrl()); pingServer().catch(() => {}); });
+      storeEl.addEventListener('change', () => { localStorage.setItem(STORE_KEY, getStoreName()); });
+      // If packaged (release), hide Base URL and force production domain
+      // Visa alltid Base URL (även i release) så vi ser värdet och kan ändra vid behov
+      baseUrlEl.value = baseUrlEl.value || 'https://app.3dfotteknik.se';
+      try { localStorage.setItem(BASE_KEY, baseUrlEl.value); } catch {}
+
+      // Init‑ping
+      (async () => {
+        logLine('Init: startar...');
+        if (window.uploader && window.uploader.getDefaultLogDir) {
+          try { logLine(`Loggkatalog: ${window.uploader.getDefaultLogDir()}`); } catch {}
+        }
+        // Säkerställ att vi ligger längst upp vid start
+        try {
+          window.scrollTo(0, 0);
+          const m = document.querySelector('main');
+          if (m) m.scrollTop = 0;
+        } catch {}
+        await pingServer().catch(() => {});
+      })();
+
+      function parseCsvLines(text) { return text.split(/\r?\n/).map(l => l.trim()).filter(Boolean); }
+      function parseCsvTable(text) {
+        const rows = text.split(/\r?\n/).filter(r => r.trim().length > 0);
+        if (rows.length === 0) return { header: [], rows: [] };
+        const split = (row) => row.split(/[;,:\t]+/).map(s => s.trim());
+        const header = split(rows[0]);
+        const out = [];
+        for (let i = 1; i < rows.length; i++) {
+          const raw = rows[i];
+          const cells = split(raw);
+          const obj = {};
+          for (let c = 0; c < header.length; c++) obj[header[c]] = cells[c] ?? '';
+          let scanTime = null;
+          const st = obj['ScanTime'] || obj['scanTime'] || obj['scantime'] || '';
+          if (st) {
+            const dt = new Date(st.replace(/\./g, '-'));
+            if (!isNaN(dt.getTime())) scanTime = dt;
+          }
+          out.push({ raw, cells, obj, scanTime });
+        }
+        return { header, rows: out };
+      }
+      function extractStoreNameFromCsv(text) {
+        const rows = parseCsvLines(text).filter(Boolean);
+        const splitRow = (row) => row.split(/[;,:\t]+/).map(s => s.trim());
+        // 1) Hitta första header-rad som innehåller exakt "store_name"
+        let headerIdx = -1;
+        let storeCol = -1;
+        for (let i = 0; i < rows.length; i++) {
+          const headerCells = splitRow(rows[i]).map(s => s.toLowerCase());
+          const pos = headerCells.findIndex(h => h === 'store_name');
+          if (pos !== -1) { headerIdx = i; storeCol = pos; break; }
+        }
+        if (headerIdx !== -1 && storeCol !== -1) {
+          // 2) Gå nedåt i filen tills vi hittar första icke-tomma värdet i just den kolumnen
+          for (let j = headerIdx + 1; j < rows.length; j++) {
+            const cells = splitRow(rows[j]);
+            if (storeCol < cells.length) {
+              const v = cells[storeCol]?.trim();
+              if (v && v.toLowerCase() !== 'store_name' && v.toLowerCase() !== 'user_name') {
+                return v;
+              }
+            }
+          }
+        }
+        // Om vi inte hittar via header/kolumn: returnera tom sträng (ingen fallback mot andra fält)
+        return '';
+      }
+      function whitelistFiles(fileList) {
+        const result = [];
+        for (const f of Array.from(fileList)) {
+          const rel = f.webkitRelativePath || f.name || '';
+          const lower = rel.toLowerCase();
+          const isReport = lower.endsWith('.pdf');
+          const isModel  = lower.endsWith('.oex') || lower.endsWith('.stl') || lower.endsWith('.obj');
+          const isImage  = /\.(bmp|jpg|jpeg|png)$/i.test(lower) && (lower.includes('arch') || lower.includes('foot3d') || lower.includes('pronator'));
+          if (isReport || isModel || isImage) result.push({ file: f, relPath: rel, isReport, isModel, isImage });
+        }
+        return result;
+      }
+      function classify(name) {
+        const n = name.toLowerCase();
+        if (n.endsWith('.pdf')) return 'report';
+        if (n.endsWith('.oex') || n.endsWith('.stl') || n.endsWith('.obj')) {
+          const isL = /(^|[_-])l(\.|$)|(^|[_-])left(\b|_)/i.test(n);
+          return isL ? 'modelL' : 'modelR';
+        }
+        if (n.includes('arch')) return 'arch';
+        if (n.includes('foot3d')) return 'foot3d';
+        if (n.includes('pronator')) return 'pronator';
+        return 'other';
+      }
+      function parseFolderName(dirName) {
+        const name = (dirName || '').trim();
+        const idx = name.indexOf('_');
+        if (idx > 0) {
+          const phonePart = name.slice(0, idx);
+          if (/^\+?\d+$/.test(phonePart)) {
+            const userPart = name.slice(idx + 1).replace(/_/g, ' ').trim();
+            return { phone: phonePart, user: userPart };
+          }
+        }
+        const parts = name.split(/\s+/);
+        if (parts.length > 1 && /^\+?\d+/.test(parts[0])) {
+          const phone = parts[0].replace(/_.*/, '');
+          const user = parts.slice(1).join(' ').replace(/_/g, ' ').trim();
+          return { phone, user };
+        }
+        return { phone: '', user: name };
+      }
+      function groupByDir(whitelisted) {
+        const groups = new Map();
+        for (const item of whitelisted) {
+          const parts = item.relPath.split(/[\\/]/);
+          const dir = parts.slice(0, -1).join('/');
+          if (!groups.has(dir)) groups.set(dir, []);
+          groups.get(dir).push(item);
+        }
+        return groups;
+      }
+      async function fileToBase64(file) {
+        return new Promise((resolve, reject) => {
+          const r = new FileReader();
+          r.onload  = () => { const s = String(r.result || ''); resolve(s.includes(',') ? s.split(',')[1] : s); };
+          r.onerror = reject;
+          r.readAsDataURL(file);
+        });
+      }
+      async function postJson(url, body) {
+        const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        return data;
+      }
+      async function pingServer() {
+        const base = getBaseUrl();
+        const tryPaths = ['/api/scanners/health', '/api/health'];
+        for (const p of tryPaths) {
+          try {
+            const ctrl = new AbortController();
+            const t = setTimeout(() => ctrl.abort(), 4000);
+            const res = await fetch(`${base}${p}`, { method: 'GET', signal: ctrl.signal });
+            clearTimeout(t);
+            if (res.ok) {
+              logLine(`Server OK: ${base} (${p})`);
+              return true;
+            }
+          } catch {}
+        }
+        logLine(`Server ej nåbar: ${base} (404)`);
+        return false;
+      }
+      function pad2(n){ return String(n).padStart(2, '0'); }
+      function dayFolder(root, d) {
+        const y = d.getFullYear();
+        const m = pad2(d.getMonth()+1);
+        const dd = pad2(d.getDate());
+        return window.uploader.pathJoin(root, String(y), m, dd);
+      }
+
+      document.getElementById('btnDryRun').addEventListener('click', async () => {
+        const dirInput = document.getElementById('dirInput');
+        const csvInput = document.getElementById('csvInput');
+        if (!dirInput.files?.length) { logLine('Välj en dagsmapp först.'); return; }
+        if (!csvInput.files?.length) { logLine('Välj feetbase.csv.'); return; }
+        const csvText = await csvInput.files[0].text();
+        const lines   = parseCsvLines(csvText);
+        logLine(`Läste ${lines.length} CSV-rader.`);
+        // Try to auto-detect store_name from CSV once
+        const currentStore = getStoreName();
+        const guessed = extractStoreNameFromCsv(csvText);
+        if (guessed) {
+          storeEl.value = guessed;
+          localStorage.setItem(STORE_KEY, guessed);
+          logLine(`Hittade store_name i CSV: ${guessed}`);
+        } else {
+          logLine('Hittade inget store_name i CSV – kontrollera headern och att rad 2 innehåller värdet.');
+        }
+        const whitelisted = whitelistFiles(dirInput.files);
+        const groups = groupByDir(whitelisted);
+        const baseUrl = getBaseUrl();
+        const store   = getStoreName();
+        for (const [dir, items] of groups.entries()) {
+          const report = items.filter(i => i.isReport).length;
+          const models = items.filter(i => i.isModel).length;
+          const imgs   = items.filter(i => i.isImage).length;
+          logLine(`[${dir}] lokalt: report=${report}, models=${models}, images=${imgs}`);
+          try {
+            const dirName = (dir.split('/').pop() || '').trim();
+            const { phone, user } = parseFolderName(dirName);
+            const scanTime = new Date(Math.max(...items.map(i => i.file.lastModified))).toISOString();
+            const pre = await postJson(`${baseUrl}/api/scanners/upload-manual-file`, { checkOnly: true, store_name: store, user_name: user, phone, scanTime });
+            const miss = pre.missing || {};
+            if (pre.transmissionId) {
+              const matched = pre.matched || 'exact';
+              const mf = pre.matchedFields || {};
+              logLine(`[${dir}] match: tx=${pre.transmissionId}, mode=${matched}, phoneMatch=${mf.phoneMatched?'ja':'nej'}, nameMatch=${mf.userMatched?'ja':'nej'}`);
+            }
+            const lack = Object.entries(miss).filter(([k,v]) => v).map(([k]) => k).join(', ') || 'inget';
+            logLine(`[${dir}] i huvudapp: complete=${pre.complete ? 'ja' : 'nej'}, saknar: ${lack}`);
+          } catch (e) {
+            logLine(`[${dir}] preflight-fel: ${e.message || e}`);
+          }
+        }
+        logLine('Torrkörning klar.');
+      });
+
+      document.getElementById('btnStart').addEventListener('click', async () => {
+        const baseUrl = getBaseUrl();
+        const store   = getStoreName();
+        const dirInput = document.getElementById('dirInput');
+        const csvInput = document.getElementById('csvInput');
+        if (!store) { logLine('Fyll i Scanner serial (store_name).'); return; }
+        if (!dirInput.files?.length) { logLine('Välj en dagsmapp.'); return; }
+        if (!csvInput.files?.length) { logLine('Välj feetbase.csv.'); return; }
+
+        // Quick connectivity check
+        const ok = await pingServer();
+        if (!ok) { logLine('Avbryter – kan inte nå servern.'); return; }
+
+        const csvText = await csvInput.files[0].text();
+        const lines   = parseCsvLines(csvText);
+        const whitelisted = whitelistFiles(dirInput.files);
+        const groups = groupByDir(whitelisted);
+        let csvIndex = 0;
+
+        for (const [dir, items] of groups.entries()) {
+          try {
+            logLine(`Bearbetar ${dir}…`);
+            const dirName = (dir.split('/').pop() || '').trim();
+            const { phone, user } = parseFolderName(dirName);
+            const scanTime = new Date(Math.max(...items.map(i => i.file.lastModified))).toISOString();
+
+            // Preflight: checkOnly
+            const pre = await postJson(`${baseUrl}/api/scanners/upload-manual-file`, {
+              checkOnly: true, store_name: store, user_name: user, phone, scanTime
+            });
+            const ex = pre.existing || { feetdata:false, report:false, modelL:false, modelR:false, images:{arch:0,foot3d:0,pronator:0} };
+            const needFeet = !!pre.missing?.feetdata && lines.length > csvIndex;
+            const needReport = !!pre.missing?.report;
+            const needModelL = !!pre.missing?.modelL;
+            const needModelR = !!pre.missing?.modelR;
+            const needImages = !!pre.missing?.arch || !!pre.missing?.foot3d;
+            if (!needFeet && !needReport && !needModelL && !needModelR && !needImages) {
+              logLine(`[${dirName}] Komplett i huvudappen – hoppar över.`);
+              continue;
+            }
+
+            // INIT (create/ensure) – skicka csvText endast om vi behöver feetdata
+            const feetLines = lines.slice(csvIndex, Math.min(csvIndex + 2, lines.length));
+            csvIndex += 2;
+            const initResp = await postJson(`${baseUrl}/api/scanners/upload-manual-file`, {
+              store_name: store, user_name: user, phone, scanTime, csvText: needFeet ? feetLines.join('\n') : undefined
+            });
+            const tx  = initResp.transmissionId;
+            const sid = initResp.scannerId;
+            if (!tx || !sid) throw new Error('Kunde inte skapa/hitta transmission');
+            logLine(`Transmission: ${tx}`);
+
+            // UPLOAD filer
+            for (const item of items) {
+              const name = (item.relPath.split(/[\\/]/).pop()) || item.file.name;
+              const kind = classify(name);
+              if (kind === 'report' && !needReport) continue;
+              if (kind === 'modelL' && !needModelL) continue;
+              if (kind === 'modelR' && !needModelR) continue;
+              if ((kind === 'arch' || kind === 'foot3d' || kind === 'pronator') && !needImages) continue;
+              const base64 = await fileToBase64(item.file);
+              const contentType = item.file.type || (item.isImage ? 'image/bmp' : 'application/octet-stream');
+              const dataBase64  = `data:${contentType};base64,${base64}`;
+              await postJson(`${baseUrl}/api/scanners/upload-manual-file`, { transmissionId: tx, scannerId: sid, filename: name, contentType, dataBase64 });
+              logLine(`Uppladdad: ${name}`);
+            }
+
+            // FINALIZE
+            const fin = await postJson(`${baseUrl}/api/scanners/upload-manual-file`, { transmissionId: tx, scannerId: sid, finalize: true });
+            logLine(`Jobb skapat: ${fin.jobId}`);
+          } catch (e) {
+            logLine(`Fel i ${dir}: ${e.message || e}`);
+          }
+        }
+        logLine('Batch klar – cron/processing slutför i bakgrunden.');
+      });
+
+      // Auto-run (filesystem via preload)
+      document.getElementById('btnAuto').addEventListener('click', async () => {
+        const baseUrl = getBaseUrl();
+        const store   = getStoreName();
+        if (!store) { logLine('Fyll i Scanner serial (store_name).'); return; }
+        const ok = await pingServer();
+        if (!ok) { logLine('Avbryter – kan inte nå servern.'); return; }
+
+        const rootEl = document.getElementById('rootDir');
+        const includeYesterday = document.getElementById('includeYesterday').checked;
+        const root = (rootEl.value && rootEl.value.trim()) || 'D:\\\\LSF350';
+
+        const csvPath = window.uploader.pathJoin(root, 'dataBase', 'feetbase.csv');
+        if (!window.uploader.exists(csvPath)) { logLine(`Hittar inte CSV: ${csvPath}`); return; }
+        const csvText = window.uploader.readTextFile(csvPath);
+        const table = parseCsvTable(csvText);
+        // Datumfilter: idag + ev. gårdag
+        const today = new Date();
+        const isSameDay = (a, b) => a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate();
+        const yday = new Date(today); yday.setDate(today.getDate()-1);
+        const filteredRows = table.rows.filter(r => {
+          if (!r.scanTime) return false;
+          return isSameDay(r.scanTime, today) || (includeYesterday && isSameDay(r.scanTime, yday));
+        });
+        if (filteredRows.length === 0) { logLine('Inga CSV-rader för idag/gårdag.'); return; }
+        const filteredLines = filteredRows.map(r => r.raw);
+
+        const days = [today];
+        if (includeYesterday) { const y = new Date(today); y.setDate(today.getDate()-1); days.unshift(y); }
+
+        // Iterate days → subfolders
+        for (const d of days) {
+          const dPath = dayFolder(root, d);
+          if (!window.uploader.exists(dPath)) { logLine(`Ingen dagmapp: ${dPath}`); continue; }
+          logLine(`Skannar ${dPath}…`);
+          const sub = window.uploader.listDir(dPath).filter(e => e.isDir);
+          let csvIndex = 0;
+
+          for (const dirEntry of sub) {
+            try {
+              const dir = dirEntry.fullPath;
+              const files = window.uploader.listFilesRecursive(dir);
+              // Build File-like objects for upload pipeline
+              const items = [];
+              for (const f of files) {
+                const lower = f.name.toLowerCase();
+                const isReport = lower.endsWith('.pdf');
+                const isModel  = lower.endsWith('.oex') || lower.endsWith('.stl') || lower.endsWith('.obj');
+                const isImage  = /\.(bmp|jpg|jpeg|png)$/i.test(lower) && (lower.includes('arch') || lower.includes('foot3d') || lower.includes('pronator'));
+                if (!(isReport || isModel || isImage)) continue;
+                items.push({ path: f.fullPath, name: f.name, isReport, isModel, isImage, mtimeMs: f.mtimeMs });
+              }
+              if (!items.length) { logLine(`[${dirEntry.name}] Inga filer att ladda upp.`); continue; }
+
+              const dirName = dirEntry.name;
+              const parts   = dirName.split(' ');
+              const phone   = (parts[0] && /[0-9+]/.test(parts[0][0])) ? parts[0] : '';
+              const user    = phone ? parts.slice(1).join(' ') : dirName;
+              const scanTime = new Date(Math.max(...items.map(i => i.mtimeMs))).toISOString();
+
+              // Preflight
+              const pre = await postJson(`${baseUrl}/api/scanners/upload-manual-file`, {
+                checkOnly: true, store_name: store, user_name: user, phone, scanTime
+              });
+              const miss = pre.missing || {};
+              const lack = Object.entries(miss).filter(([k,v]) => v).map(([k]) => k).join(', ') || 'inget';
+              logLine(`[${dirName}] i huvudapp: complete=${pre.complete ? 'ja' : 'nej'}, saknar: ${lack}`);
+              const needFeet = !!miss.feetdata;
+              const needReport = !!miss.report;
+              const needModelL = !!miss.modelL;
+              const needModelR = !!miss.modelR;
+              const needImages = !!miss.arch || !!miss.foot3d;
+              if (!needFeet && !needReport && !needModelL && !needModelR && !needImages) {
+                // Already complete → skip
+                continue;
+              }
+
+              // INIT (csvText endast om feetdata saknas)
+              const feetLines = filteredLines.slice(csvIndex, Math.min(csvIndex + 2, filteredLines.length));
+              csvIndex += 2;
+              const initResp = await postJson(`${baseUrl}/api/scanners/upload-manual-file`, {
+                store_name: store, user_name: user, phone, scanTime, csvText: needFeet ? feetLines.join('\n') : undefined
+              });
+              const tx  = initResp.transmissionId;
+              const sid = initResp.scannerId;
+              if (!tx || !sid) throw new Error('Kunde inte skapa/hitta transmission');
+              logLine(`Transmission: ${tx} [${dirName}]`);
+
+              // UPLOAD
+              for (const item of items) {
+                // Read file as base64 via Node fs
+                // Small helper through DataURL prefix
+                const binary = window.uploader.readTextFile(item.path, 'base64');
+                const kind = (() => {
+                  const n = item.name.toLowerCase();
+                  if (n.endsWith('.pdf')) return 'report';
+                  if (n.endsWith('.oex') || n.endsWith('.stl') || n.endsWith('.obj')) {
+                    const isL = /(^|[_-])l(\.|$)|(^|[_-])left(\b|_)/i.test(n);
+                    return isL ? 'modelL' : 'modelR';
+                  }
+                  if (n.includes('arch')) return 'arch';
+                  if (n.includes('foot3d')) return 'foot3d';
+                  if (n.includes('pronator')) return 'pronator';
+                  return 'other';
+                })();
+                if (kind === 'report' && !needReport) continue;
+                if (kind === 'modelL' && !needModelL) continue;
+                if (kind === 'modelR' && !needModelR) continue;
+                if ((kind === 'arch' || kind === 'foot3d' || kind === 'pronator') && !needImages) continue;
+
+                const contentType =
+                  item.isImage ? 'image/bmp' :
+                  (item.name.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream');
+                const dataBase64 = `data:${contentType};base64,${binary}`;
+                await postJson(`${baseUrl}/api/scanners/upload-manual-file`, {
+                  transmissionId: tx, scannerId: sid, filename: item.name, contentType, dataBase64
+                });
+                logLine(`[${dirName}] uppladdad: ${item.name}`);
+              }
+
+              // FINALIZE
+              const fin = await postJson(`${baseUrl}/api/scanners/upload-manual-file`, { transmissionId: tx, scannerId: sid, finalize: true });
+              logLine(`Jobb skapat: ${fin.jobId} [${dirName}]`);
+            } catch (e) {
+              logLine(`Fel i ${dirEntry.name}: ${e.message || e}`);
+            }
+          }
+        }
+        logLine('Auto‑körning klar.');
+      });
+
+      // Schedule buttons
+      document.getElementById('btnInstallSched').addEventListener('click', async () => {
+        try {
+          const t = document.getElementById('dailyTime').value || '01:30';
+          const root = (document.getElementById('rootDir').value && document.getElementById('rootDir').value.trim()) || 'D:\\\\LSF350';
+          const includeYesterday = document.getElementById('includeYesterday').checked;
+          await window.uploader.scheduleInstall({ time: t, includeYesterday, root, quitOnDone: true });
+          logLine(`Schemaläggning skapad kl ${t} (root=${root}, yesterday=${includeYesterday}).`);
+        } catch (e) {
+          logLine(`Misslyckades skapa schema: ${e.message || e}`);
+        }
+      });
+      document.getElementById('btnRemoveSched').addEventListener('click', async () => {
+        try {
+          await window.uploader.scheduleRemove({});
+          logLine('Schemaläggning borttagen.');
+        } catch (e) {
+          logLine(`Misslyckades ta bort schema: ${e.message || e}`);
+        }
+      });
+
+      // Auto-mode via args (Task Scheduler)
+      (async () => {
+        try {
+          const params = new URLSearchParams(location.search);
+          const auto = params.get('auto') === '1';
+          if (!auto) return;
+          const store = getStoreName();
+          if (!store) { logLine('Auto: store_name saknas. Avbryter.'); return; }
+          const ok = await pingServer();
+          if (!ok) { logLine('Auto: server ej nåbar.'); return; }
+          const root = params.get('root') || 'D:\\\\LSF350';
+          const includeYesterday = params.get('yesterday') === '1';
+          (document.getElementById('rootDir')).value = root;
+          (document.getElementById('includeYesterday')).checked = includeYesterday;
+          // Kör auto direkt
+          document.getElementById('btnAuto').click();
+          // När batch är klar, meddela main att avsluta om önskat
+          const observer = new MutationObserver(() => {
+            if (logEl.value.includes('Auto‑körning klar.')) {
+              observer.disconnect();
+              if (params.get('quit') === '1') window.uploader.autoDone();
+            }
+          });
+          observer.observe(logEl, { childList: true, subtree: true, characterData: true });
+        } catch {}
+      })();
+
+      // Open logs folder
+      document.getElementById('btnOpenLogs').addEventListener('click', async () => {
+        try {
+          const p = await window.uploader.openLogDir();
+          logLine(`Öppnade loggmapp: ${p}`);
+        } catch (e) {
+          logLine(`Kunde inte öppna loggmapp: ${e.message || e}`);
+        }
+      });
+
+      // Main-process tray/CLI one-shot trigger
+      if (window.uploader && window.uploader.onAutoRun) {
+        window.uploader.onAutoRun(() => {
+          try {
+            document.getElementById('btnAuto').click();
+          } catch (e) {
+            logLine(`Auto-run trigger fel: ${e.message || e}`);
+          }
+        });
+      }
+    </script>
+  </body>
+  </html>
+

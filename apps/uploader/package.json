@@ -1,0 +1,24 @@
+{
+  "name": "scanner-batch-uploader",
+  "private": true,
+  "version": "0.1.1",
+  "description": "Electron GUI for batch uploading scanner files and feetbase.csv to backend",
+  "main": "src/main/main.js",
+  "author": "",
+  "license": "UNLICENSED",
+  "scripts": {
+    "start": "electron .",
+    "build:win": "electron-builder --win nsis portable",
+    "dist": "electron-builder --win",
+    "test:parse": "node scripts/parse-feetbase.js"
+  },
+  "dependencies": {
+    "electron-updater": "^6.1.7"
+  },
+  "devDependencies": {
+    "electron": "^28.2.0",
+    "electron-builder": "^24.9.1"
+  }
+}
+
+

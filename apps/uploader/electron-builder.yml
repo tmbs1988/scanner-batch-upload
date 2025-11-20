@@ -1,0 +1,29 @@
+appId: com.3dfotteknik.scanner-batch-uploader
+productName: "3D Fotteknik Scanner Batch Uploader"
+directories:
+  output: "dist"
+files:
+  - "src/**"
+  - "package.json"
+asar: true
+icon: "src/renderer/icon.ico"
+extraResources:
+  - from: "src/renderer/icon.ico"
+    to: "icon.ico"
+  - from: "src/renderer/icon.png"
+    to: "icon.png"
+win:
+  target:
+    - nsis
+    - portable
+  artifactName: "${productName}-${version}-win-${arch}.${ext}"
+nsis:
+  oneClick: true
+  perMachine: false
+  allowToChangeInstallationDirectory: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+extraMetadata:
+  version: "0.1.1"
+
+

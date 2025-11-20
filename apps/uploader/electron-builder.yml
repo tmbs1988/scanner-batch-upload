@@ -20,9 +20,10 @@ nsis:
   oneClick: true
   perMachine: false
   allowToChangeInstallationDirectory: false
-  createDesktopShortcut: true
+  createDesktopShortcut: always
   createStartMenuShortcut: true
   runAfterFinish: true
+  shortcutName: "3D Fotteknik Scanner Batch Uploader"
 extraMetadata:
   # Use package.json version; remove hardcoded override
   # version: "0.1.1"

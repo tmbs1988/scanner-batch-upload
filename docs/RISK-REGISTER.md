@@ -1,7 +1,7 @@
 # Risk Register
 
 - R-001: OTA uppdateringar körs inte (fel artefakt/ingen tagg).
-  - Mitigation: Bygg endast NSIS installer; ta bort `portable`; GitHub Actions release på tagg med `permissions: contents: write` och `fetch-depth: 0`; test i staging.
+  - Mitigation: Bygg endast NSIS installer; ta bort `portable` i lokala byggscript; GitHub Actions release på tagg med `permissions: contents: write` och `fetch-depth: 0`; test i staging.
 
 - R-004: Desktop/startmeny‑genväg skapas inte efter installation.
   - Mitigation: Sätt `nsis.createDesktopShortcut: always`, `createStartMenuShortcut: true`, `shortcutName` och verifiera i manuell QA.

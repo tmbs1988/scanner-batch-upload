@@ -4,6 +4,7 @@
 - Release: Publicerar via tagg `v*`; elektron‑builder `publish: github` aktiv.
 - Installer: Säkerställd NSIS‑genvägar (desktop/startmeny), artefaktnamn oförändrat.
 - OTA: Verifieringsrelease för att säkerställa uppdatering från 0.1.7.
+  - Lokal bygg: Tog bort `portable` från `npm run build:win` för att undvika att man råkar köra en icke‑installerande exe.
 
 ## 0.1.2 - 2025-11-20
 

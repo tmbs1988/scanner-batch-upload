@@ -497,18 +497,34 @@
       // Auto-run (filesystem via preload)
       document.getElementById('btnAuto').addEventListener('click', async () => {
         const baseUrl = getBaseUrl();
-        const store   = getStoreName();
-        if (!store) { logLine('Fyll i Scanner serial (store_name).'); return; }
-        const ok = await pingServer();
-        if (!ok) { logLine('Avbryter – kan inte nå servern.'); return; }
-
         const rootEl = document.getElementById('rootDir');
         const includeYesterday = document.getElementById('includeYesterday').checked;
         const root = (rootEl.value && rootEl.value.trim()) || 'D:\\\\LSF350';
 
+        // Försök auto-hämta store_name från CSV om fältet är tomt
         const csvPath = window.uploader.pathJoin(root, 'dataBase', 'feetbase.csv');
-        if (!window.uploader.exists(csvPath)) { logLine(`Hittar inte CSV: ${csvPath}`); return; }
-        const csvText = window.uploader.readTextFile(csvPath);
+        if (!window.uploader.exists(csvPath)) {
+          logLine(`Hittar inte CSV: ${csvPath}`);
+        }
+        let csvText = '';
+        try { csvText = window.uploader.readTextFile(csvPath); } catch {}
+        if (!getStoreName() && csvText) {
+          const guessed = extractStoreNameFromCsv(csvText);
+          if (guessed) {
+            try {
+              document.getElementById('storeName').value = guessed;
+              localStorage.setItem('cfg_storeName', guessed);
+              logLine(`Auto: store_name från CSV: ${guessed}`);
+            } catch {}
+          }
+        }
+
+        const store   = getStoreName();
+        if (!store) { logLine('Fyll i Scanner serial (store_name).'); return; }
+
+        const ok = await pingServer();
+        if (!ok) { logLine('Avbryter – kan inte nå servern.'); return; }
+
         const table = parseCsvTable(csvText);
         // Datumfilter: idag + ev. gårdag
         const today = new Date();
@@ -652,11 +668,29 @@
           const params = new URLSearchParams(location.search);
           const auto = params.get('auto') === '1';
           if (!auto) return;
+          const root = params.get('root') || 'D:\\\\LSF350';
+
+          // Om store saknas, försök hämta från CSV under root
+          if (!getStoreName()) {
+            const csvPath = window.uploader.pathJoin(root, 'dataBase', 'feetbase.csv');
+            if (window.uploader.exists(csvPath)) {
+              try {
+                const csvText = window.uploader.readTextFile(csvPath);
+                const guessed = extractStoreNameFromCsv(csvText);
+                if (guessed) {
+                  (document.getElementById('storeName')).value = guessed;
+                  localStorage.setItem('cfg_storeName', guessed);
+                  logLine(`Auto: store_name från CSV: ${guessed}`);
+                }
+              } catch {}
+            }
+          }
+
           const store = getStoreName();
           if (!store) { logLine('Auto: store_name saknas. Avbryter.'); return; }
+
           const ok = await pingServer();
           if (!ok) { logLine('Auto: server ej nåbar.'); return; }
-          const root = params.get('root') || 'D:\\\\LSF350';
           const includeYesterday = params.get('yesterday') === '1';
           (document.getElementById('rootDir')).value = root;
           (document.getElementById('includeYesterday')).checked = includeYesterday;

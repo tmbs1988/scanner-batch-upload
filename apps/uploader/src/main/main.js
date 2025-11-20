@@ -120,12 +120,28 @@ function createWindow() {
       } catch {}
     }
     if (!iconImg || iconImg.isEmpty()) {
-      iconImg = nativeImage.createEmpty();
+      // Skapa ett enkelt orange 16x16-bitmap som fallback så att tray-ikonen inte är tom
+      const w = 16, h = 16;
+      const buf = Buffer.alloc(w * h * 4);
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const idx = (y * w + x) * 4;
+          // BGRA – orange (#f97316)
+          buf[idx + 0] = 0x16; // B
+          buf[idx + 1] = 0x73; // G
+          buf[idx + 2] = 0xF9; // R
+          buf[idx + 3] = 0xFF; // A
+        }
+      }
+      iconImg = nativeImage.createFromBitmap(buf, { width: w, height: h });
     }
     tray = new Tray(iconImg);
     tray.setToolTip('Scanner Batch Uploader');
     const template = [
       { label: 'Visa', click: () => { win.show(); win.focus(); } },
+      { type: 'separator' },
+      { label: 'Sök efter uppdatering', click: () => { if (app.isPackaged) { try { autoUpdater.checkForUpdates(); } catch {} } } },
+      { label: 'Installera uppdatering', enabled: false, click: () => { if (app.isPackaged) { try { autoUpdater.quitAndInstall(); } catch {} } } },
       { type: 'separator' },
       { label: 'Synka nu (1 gång)', click: () => { win.webContents.send('auto-run-once'); } },
       { type: 'separator' },

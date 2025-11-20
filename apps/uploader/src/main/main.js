@@ -64,6 +64,10 @@ function createWindow() {
 
   // Security: load local file (no remote code). Renderer will use fetch to call backend API.
   win.removeMenu();
+  try {
+    // Visa version i window bar (titel)
+    win.setTitle(`Scanner Batch Uploader v${app.getVersion()}`);
+  } catch {}
 
   // Help debugging packaged issues: show devtools and basic lifecycle logs
   win.webContents.on('did-fail-load', (e, errCode, errDesc, url) => {

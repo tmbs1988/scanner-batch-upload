@@ -1,6 +1,7 @@
 const { app, BrowserWindow, protocol, ipcMain, Tray, Menu, nativeImage } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { autoUpdater } = require('electron-updater');
 
 let quitOnDone = false;
 let runOnce = false;
@@ -164,6 +165,25 @@ app.whenReady().then(() => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
+
+  // OTA update check (only when packaged)
+  try {
+    if (app.isPackaged) {
+      autoUpdater.checkForUpdatesAndNotify();
+      autoUpdater.on('update-available', () => {
+        if (tray && tray.displayBalloon) {
+          try { tray.displayBalloon({ title: 'Uppdatering hittad', content: 'Ny version laddas ner…' }); } catch {}
+        }
+      });
+      autoUpdater.on('update-downloaded', () => {
+        if (tray && tray.displayBalloon) {
+          try { tray.displayBalloon({ title: 'Uppdatering redo', content: 'Starta om för att installera uppdateringen.' }); } catch {}
+        }
+      });
+    }
+  } catch (e) {
+    console.error('autoUpdater error', e);
+  }
 });
 
 app.on('window-all-closed', () => {

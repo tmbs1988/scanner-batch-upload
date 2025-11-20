@@ -10,6 +10,7 @@
     "start": "electron .",
     "build:win": "electron-builder --win nsis portable",
     "dist": "electron-builder --win",
+    "release:win": "electron-builder --win --publish always",
     "test:parse": "node scripts/parse-feetbase.js"
   },
   "dependencies": {

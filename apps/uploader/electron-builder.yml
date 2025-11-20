@@ -25,5 +25,9 @@ nsis:
   createStartMenuShortcut: true
 extraMetadata:
   version: "0.1.1"
+publish:
+  - provider: github
+    owner: tmbs1988
+    repo: scanner-batch-upload
 
 

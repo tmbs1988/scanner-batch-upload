@@ -77,6 +77,7 @@ function createWindow() {
   win.webContents.on('did-finish-load', () => console.log('renderer did-finish-load'));
   // Pass minimal flags to renderer via query string (read also via preload argv if needed)
   const url = new URL(`file://${path.join(__dirname, '../renderer/index.html')}`);
+  try { url.searchParams.set('ver', app.getVersion()); } catch {}
   if (hasArg('--auto')) url.searchParams.set('auto', '1');
   if (hasArg('--yesterday')) url.searchParams.set('yesterday', '1');
   const root = getArgValue('--root', '');

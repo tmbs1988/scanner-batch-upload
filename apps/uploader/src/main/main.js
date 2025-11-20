@@ -185,16 +185,21 @@ app.whenReady().then(() => {
   // OTA update check (only when packaged)
   try {
     if (app.isPackaged) {
-      autoUpdater.checkForUpdatesAndNotify();
-      autoUpdater.on('update-available', () => {
-        if (tray && tray.displayBalloon) {
-          try { tray.displayBalloon({ title: 'Uppdatering hittad', content: 'Ny version laddas ner…' }); } catch {}
-        }
-      });
+      // Fullständig tyst uppdatering: ladda ned och installera automatiskt
+      autoUpdater.autoDownload = true;
+      // Installera direkt när nedladdning är klar (tyst läge på Windows)
       autoUpdater.on('update-downloaded', () => {
-        if (tray && tray.displayBalloon) {
-          try { tray.displayBalloon({ title: 'Uppdatering redo', content: 'Starta om för att installera uppdateringen.' }); } catch {}
-        }
+        try {
+          // informera i tray om vi har ikon, men installera oavsett
+          if (tray && tray.displayBalloon) {
+            tray.displayBalloon({ title: 'Uppdatering', content: 'Ny version installerades. Applikationen startas om.' });
+          }
+        } catch {}
+        // isSilent=true (Windows), isForceRunAfter=true för att starta om automatiskt
+        setImmediate(() => autoUpdater.quitAndInstall(false, true));
+      });
+      autoUpdater.checkForUpdates().catch(err => {
+        console.error('autoUpdater check error', err);
       });
     }
   } catch (e) {

@@ -15,16 +15,17 @@ extraResources:
 win:
   target:
     - nsis
-    - portable
-  artifactName: "${productName}-${version}-win-${arch}.${ext}"
+  artifactName: "${productName} Setup ${version}.${ext}"
 nsis:
   oneClick: true
   perMachine: false
   allowToChangeInstallationDirectory: false
   createDesktopShortcut: true
   createStartMenuShortcut: true
+  runAfterFinish: true
 extraMetadata:
-  version: "0.1.1"
+  # Use package.json version; remove hardcoded override
+  # version: "0.1.1"
 publish:
   - provider: github
     owner: tmbs1988

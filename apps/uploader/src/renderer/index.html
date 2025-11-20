@@ -30,6 +30,17 @@
           --btn-secondary: hsl(220 45% 30%);
         }
       }
+      /* Tvinga mörkt tema om html.force-dark är satt (överskuggar OS‑inställning) */
+      html.force-dark {
+        --bg: hsl(220 45% 5%);
+        --text: hsl(220 25% 97%);
+        --header-bg: hsl(220 45% 8%);
+        --card-bg: hsl(220 45% 8%);
+        --border: hsl(220 45% 15%);
+        --muted: hsl(220 25% 70%);
+        --btn-primary: hsl(28 100% 50%);
+        --btn-secondary: hsl(220 45% 30%);
+      }
       html, body { height: 100%; overflow: hidden; }
       body {
         font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
@@ -158,6 +169,11 @@
     </main>
 
     <script type="module">
+      // Tvinga mörkt läge som standard oavsett OS; kan ändras till 'light' via localStorage ('cfg_theme')
+      try {
+        const theme = (localStorage.getItem('cfg_theme') || 'dark').toLowerCase();
+        if (theme === 'dark') document.documentElement.classList.add('force-dark');
+      } catch { document.documentElement.classList.add('force-dark'); }
       const logEl = document.getElementById('log');
       function logLine(msg) {
         const ts = new Date().toISOString();

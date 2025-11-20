@@ -1,3 +1,10 @@
+## 0.1.8 - 2025-11-20
+
+- CI: Åtgärdade GitHub Release-rättigheter (`permissions: contents: write`, `fetch-depth: 0`).
+- Release: Publicerar via tagg `v*`; elektron‑builder `publish: github` aktiv.
+- Installer: Säkerställd NSIS‑genvägar (desktop/startmeny), artefaktnamn oförändrat.
+- OTA: Verifieringsrelease för att säkerställa uppdatering från 0.1.7.
+
 ## 0.1.2 - 2025-11-20
 
 - Force dark theme regardless of OS setting for consistent UI.
@@ -9,5 +16,6 @@
 ## 0.1.1 - 2025-11-20
 
 - Initial OTA integration, tray menu, window state, base UI improvements.
+
 
 

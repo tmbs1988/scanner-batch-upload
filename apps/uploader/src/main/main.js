@@ -201,7 +201,7 @@ app.whenReady().then(() => {
           }
         } catch {}
         // isSilent=true (Windows), isForceRunAfter=true för att starta om automatiskt
-        setImmediate(() => autoUpdater.quitAndInstall(false, true));
+        setImmediate(() => autoUpdater.quitAndInstall(true, true));
       });
       autoUpdater.checkForUpdates().catch(err => {
         console.error('autoUpdater check error', err);

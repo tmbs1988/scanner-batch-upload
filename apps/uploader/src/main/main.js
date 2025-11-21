@@ -251,10 +251,27 @@ app.whenReady().then(() => {
           const flagPath = path.join(app.getPath('userData'), '.just-updated');
           fs.writeFileSync(flagPath, '', 'utf8');
         } catch {}
-        // Starta om
-        setImmediate(() => {
+        
+        // Stäng fönster och tray helt INNAN installation
+        try {
+          if (mainWin && !mainWin.isDestroyed()) {
+            mainWin.close();
+          }
+        } catch {}
+        try {
+          if (tray) {
+            tray.destroy();
+            tray = null;
+          }
+        } catch {}
+        
+        // VIKTIGT: sätt isQuitting för att undvika minimize-to-tray
+        app.isQuitting = true;
+        
+        // Starta om och installera (ge lite tid för tray att stängas)
+        setTimeout(() => {
           autoUpdater.quitAndInstall(true, true);
-        });
+        }, 500);
       });
       
       // Kolla direkt vid start

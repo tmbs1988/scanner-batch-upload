@@ -9,6 +9,10 @@
 
 - Rebuild: inkluderar updater‑loggning och schemafixar i den offentliga releasen.
 
+## 0.1.21 - 2025-11-21
+
+- Fix: Stäng app och tray helt innan auto-update installation (löser "Failed to uninstall" fel).
+
 ## 0.1.20 - 2025-11-21
 
 - UX: Fix för tray-minimering efter auto-uppdatering (använder userData-flagga istället för args).

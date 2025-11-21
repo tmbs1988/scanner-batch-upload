@@ -9,6 +9,10 @@
 
 - Rebuild: inkluderar updater‑loggning och schemafixar i den offentliga releasen.
 
+## 0.1.26 - 2025-11-21
+
+- Fix: Scheduler loggar nu status vid start (config loaded, enabled/disabled) till UI-loggen.
+
 ## 0.1.25 - 2025-11-21
 
 - Fix: NSIS graceful + force close, och sätter .just-updated flagga direkt i installern för tray-start.

@@ -219,8 +219,10 @@ app.whenReady().then(() => {
     console.warn('Failed to set autostart', e);
   }
 
-  // Starta intern scheduler
-  startInternalScheduler();
+  // Starta intern scheduler (vänta lite så att window är redo)
+  setTimeout(() => {
+    startInternalScheduler();
+  }, 2000);
 
   // OTA update check (only when packaged)
   try {
@@ -289,19 +291,40 @@ ipcMain.on('auto-done', () => {
 function startInternalScheduler() {
   const configPath = path.join(app.getPath('userData'), 'schedule-config.json');
   let config = null;
+  
+  const sendLog = (msg) => {
+    console.log(msg);
+    try {
+      if (mainWin && !mainWin.isDestroyed()) {
+        mainWin.webContents.send('u-upd-log', msg);
+      }
+    } catch {}
+  };
+  
   try {
     if (fs.existsSync(configPath)) {
       config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      sendLog(`[Scheduler] Config loaded: enabled=${config.enabled}, time=${config.time}, root=${config.root}`);
+    } else {
+      sendLog(`[Scheduler] No config file found`);
     }
-  } catch {}
+  } catch (e) {
+    sendLog(`[Scheduler] Failed to load config: ${e.message}`);
+  }
   
-  if (!config || !config.enabled) return;
+  if (!config || !config.enabled) {
+    sendLog('[Scheduler] Scheduler disabled or no config');
+    return;
+  }
+  
+  sendLog(`[Scheduler] Scheduler active for ${config.time} (root: ${config.root})`);
   
   const checkSchedule = () => {
     const now = new Date();
     const [hh, mm] = (config.time || '01:30').split(':').map(Number);
     if (now.getHours() === hh && now.getMinutes() === mm) {
       // Trigga batch
+      sendLog(`[Scheduler] Triggering auto-run at ${config.time}`);
       if (mainWin && !mainWin.isDestroyed()) {
         mainWin.webContents.send('auto-run-once');
       }

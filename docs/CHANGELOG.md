@@ -9,6 +9,11 @@
 
 - Rebuild: inkluderar updater‑loggning och schemafixar i den offentliga releasen.
 
+## 0.1.22 - 2025-11-21
+
+- UX: Uppdateringar laddas ner automatiskt men installeras först när användaren stänger appen (löser file-lock problem).
+- Ny tray-menyoption: "⚠️ Uppdatering väntar - starta om" när en uppdatering är nedladdad.
+
 ## 0.1.21 - 2025-11-21
 
 - Fix: Stäng app och tray helt innan auto-update installation (löser "Failed to uninstall" fel).

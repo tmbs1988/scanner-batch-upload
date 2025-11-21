@@ -239,39 +239,41 @@ app.whenReady().then(() => {
       autoUpdater.on('download-progress', (p) => sendUpd(`Downloading: ${Math.round(p?.percent || 0)}%`));
       // Installera direkt när nedladdning är klar (tyst läge på Windows)
       autoUpdater.on('update-downloaded', () => {
-        try {
-          // informera i tray om vi har ikon, men installera oavsett
-          if (tray && tray.displayBalloon) {
-            tray.displayBalloon({ title: 'Uppdatering', content: 'Ny version installerades. Applikationen startas om.' });
-          }
-        } catch {}
-        sendUpd('Update downloaded, restarting...');
+        sendUpd('Update downloaded, will install on next restart.');
         // Sätt flagga så appen startar i tray efter omstart
         try {
           const flagPath = path.join(app.getPath('userData'), '.just-updated');
           fs.writeFileSync(flagPath, '', 'utf8');
         } catch {}
         
-        // Stäng fönster och tray helt INNAN installation
-        try {
-          if (mainWin && !mainWin.isDestroyed()) {
-            mainWin.close();
-          }
-        } catch {}
+        // Visa notification i tray att uppdatering är redo
         try {
           if (tray) {
-            tray.destroy();
-            tray = null;
+            if (tray.displayBalloon) {
+              tray.displayBalloon({ 
+                title: 'Uppdatering redo', 
+                content: 'Ny version installeras när du stänger appen nästa gång.' 
+              });
+            }
+            // Uppdatera tray-menyn för att visa att uppdatering väntar
+            const contextMenu = Menu.buildFromTemplate([
+              { label: 'Visa', click: () => { if (mainWin) { mainWin.show(); mainWin.focus(); } } },
+              { label: 'Synka nu (1 gång)', click: () => { if (mainWin && !mainWin.isDestroyed()) { mainWin.show(); mainWin.webContents.send('auto-run-once'); } } },
+              { type: 'separator' },
+              { label: '⚠️ Uppdatering väntar - starta om', click: () => { 
+                app.isQuitting = true;
+                if (mainWin) mainWin.close();
+                if (tray) tray.destroy();
+                setTimeout(() => { autoUpdater.quitAndInstall(true, true); }, 500);
+              }},
+              { type: 'separator' },
+              { label: 'Avsluta', click: () => { app.isQuitting = true; app.quit(); } }
+            ]);
+            tray.setContextMenu(contextMenu);
           }
-        } catch {}
-        
-        // VIKTIGT: sätt isQuitting för att undvika minimize-to-tray
-        app.isQuitting = true;
-        
-        // Starta om och installera (ge lite tid för tray att stängas)
-        setTimeout(() => {
-          autoUpdater.quitAndInstall(true, true);
-        }, 500);
+        } catch (e) {
+          console.error('Tray update error', e);
+        }
       });
       
       // Kolla direkt vid start

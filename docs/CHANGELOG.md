@@ -9,6 +9,10 @@
 
 - Rebuild: inkluderar updater‑loggning och schemafixar i den offentliga releasen.
 
+## 0.1.19 - 2025-11-21
+
+- UX: Efter auto-uppdatering startar appen minimerad till tray (stör inte användaren).
+
 ## 0.1.18 - 2025-11-21
 
 - **Retry-logik**: Fil-upload försöker 3 gånger med exponentiell backoff (5s, 15s) vid fel.

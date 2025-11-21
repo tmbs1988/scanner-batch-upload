@@ -86,7 +86,16 @@ function createWindow() {
   if (root) url.searchParams.set('root', root);
   if (hasArg('--quit-on-done')) url.searchParams.set('quit', '1');
   win.loadURL(url.toString());
+  
+  // Avgör om fönstret ska visas eller starta minimerat till tray
+  const startHidden = hasArg('--hidden') || hasArg('--auto-restart');
+  
   win.once('ready-to-show', () => {
+    if (startHidden) {
+      // Starta i tray utan att visa fönster
+      console.log('Starting hidden in tray');
+      return;
+    }
     try {
       if (state._hasState && state.maximized) {
         win.maximize();
@@ -230,8 +239,11 @@ app.whenReady().then(() => {
           }
         } catch {}
         sendUpd('Update downloaded, restarting...');
-        // isSilent=true (Windows), isForceRunAfter=true för att starta om automatiskt
-        setImmediate(() => autoUpdater.quitAndInstall(true, true));
+        // Starta om med --auto-restart så appen öppnas i tray
+        setImmediate(() => {
+          app.relaunch({ args: process.argv.slice(1).concat(['--auto-restart']) });
+          autoUpdater.quitAndInstall(true, false); // isSilent=true, isForceRunAfter=false (vi hanterar relaunch själva)
+        });
       });
       
       // Kolla direkt vid start

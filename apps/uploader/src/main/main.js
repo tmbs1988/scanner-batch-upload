@@ -6,6 +6,7 @@ const { autoUpdater } = require('electron-updater');
 let quitOnDone = false;
 let runOnce = false;
 let tray = null;
+let mainWin = null;
 let winStatePath = null;
 
 function loadWindowState() {
@@ -95,6 +96,9 @@ function createWindow() {
     } catch {}
     win.show();
   });
+
+  // Keep reference for updater logs
+  mainWin = win;
 
   // System tray with quick actions
   try {
@@ -190,8 +194,18 @@ app.whenReady().then(() => {
   // OTA update check (only when packaged)
   try {
     if (app.isPackaged) {
+      const sendUpd = (msg) => {
+        try {
+          if (mainWin && !mainWin.isDestroyed()) mainWin.webContents.send('u-upd-log', msg);
+        } catch {}
+      };
       // Fullständig tyst uppdatering: ladda ned och installera automatiskt
       autoUpdater.autoDownload = true;
+      autoUpdater.on('checking-for-update', () => sendUpd('Checking for update...'));
+      autoUpdater.on('update-available', (i) => sendUpd(`Update available: v${i?.version || ''}`));
+      autoUpdater.on('update-not-available', (i) => sendUpd(`No update available (current v${app.getVersion()})`));
+      autoUpdater.on('error', (e) => sendUpd(`Update error: ${e?.message || e}`));
+      autoUpdater.on('download-progress', (p) => sendUpd(`Downloading: ${Math.round(p?.percent || 0)}%`));
       // Installera direkt när nedladdning är klar (tyst läge på Windows)
       autoUpdater.on('update-downloaded', () => {
         try {
@@ -200,11 +214,13 @@ app.whenReady().then(() => {
             tray.displayBalloon({ title: 'Uppdatering', content: 'Ny version installerades. Applikationen startas om.' });
           }
         } catch {}
+        sendUpd('Update downloaded, restarting...');
         // isSilent=true (Windows), isForceRunAfter=true för att starta om automatiskt
         setImmediate(() => autoUpdater.quitAndInstall(true, true));
       });
       autoUpdater.checkForUpdates().catch(err => {
         console.error('autoUpdater check error', err);
+        sendUpd(`Check failed: ${err?.message || err}`);
       });
     }
   } catch (e) {

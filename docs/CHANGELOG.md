@@ -3,6 +3,7 @@
 - Schema: Daglig körning skapas nu med interaktivt läge och högsta behörighet.
 - Fallback: Extra “vid inloggning”-jobb skapas så batchen körs även om datorn sov.
 - UI: Knapp “Kör schema nu” för snabb manuell test från appen.
+- Updater: Synlig logg i UI för “checking/available/downloaded/error”.
 
 ## 0.1.9 - 2025-11-21
 

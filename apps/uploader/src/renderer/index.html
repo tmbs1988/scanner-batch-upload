@@ -742,6 +742,11 @@
           }
         });
       }
+      if (window.uploader && window.uploader.onUpdateLog) {
+        try {
+          window.uploader.onUpdateLog((m) => logLine(`[Updater] ${m}`));
+        } catch {}
+      }
     </script>
   </body>
   </html>

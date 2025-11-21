@@ -119,6 +119,7 @@ contextBridge.exposeInMainWorld('uploader', {
   },
   autoDone: () => { ipcRenderer.send('auto-done'); },
   onAutoRun: (cb) => { try { ipcRenderer.on('auto-run-once', cb); } catch {} },
+  onUpdateLog: (cb) => { try { ipcRenderer.on('u-upd-log', (_e, m) => cb(m)); } catch {} },
 });
 
 

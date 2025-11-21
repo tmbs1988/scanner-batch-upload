@@ -1,7 +1,7 @@
 {
   "name": "scanner-batch-uploader",
   "private": true,
-  "version": "0.1.11",
+  "version": "0.1.12",
   "description": "Electron GUI for batch uploading scanner files and feetbase.csv to backend",
   "main": "src/main/main.js",
   "author": "",

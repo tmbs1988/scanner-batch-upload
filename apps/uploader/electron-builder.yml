@@ -28,6 +28,10 @@ extraMetadata:
   # Use package.json version; remove hardcoded override
   # version: "0.1.1"
 publish:
+  # Klienten hämtar uppdateringar via 'generic' (static latest.yml) för att undvika GitHub API‑begränsningar (406).
+  - provider: generic
+    url: "https://github.com/tmbs1988/scanner-batch-upload/releases/latest/download/"
+  # CI laddar fortfarande upp artefakter till GitHub Releases.
   - provider: github
     owner: tmbs1988
     repo: scanner-batch-upload

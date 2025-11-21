@@ -9,6 +9,11 @@
 
 - Rebuild: inkluderar updater‑loggning och schemafixar i den offentliga releasen.
 
+## 0.1.12 - 2025-11-21
+
+- OTA: Växla klientens provider till Generic (hämtar `latest.yml` från Releases/Latest/Download).
+- CI: Fortsätter publicera artefakter till GitHub Releases.
+
 ## 0.1.9 - 2025-11-21
 
 - OTA: Testrelease för automatisk uppdatering från 0.1.8 (inga funktionsändringar).

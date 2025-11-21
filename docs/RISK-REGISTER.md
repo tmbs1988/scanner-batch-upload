@@ -15,5 +15,8 @@
 - R-003: Olikt tema (ljust/mörkt) skapar förvirring.
   - Mitigation: Tvinga mörkt läge som standard; synlig version i window title.
 
+- R-006: Schema körs inte om datorn är avstängd/sömn eller ingen inloggad.
+  - Mitigation: Skapa även ett ONLOGON‑jobb; använd interaktivt läge `/IT` och `/RL HIGHEST`; exponera “Kör schema nu” för manuell test.
+
 
 

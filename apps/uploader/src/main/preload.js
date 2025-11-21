@@ -82,16 +82,36 @@ contextBridge.exposeInMainWorld('uploader', {
       if (quitOnDone) args.push('--quit-on-done');
       const tr = `"${exe}" ${args.join(' ')}`;
       const cmd = 'schtasks';
-      const schedArgs = ['/Create', '/TN', taskName, '/TR', tr, '/SC', 'DAILY', '/ST', time, '/F'];
-      execFile(cmd, schedArgs, { windowsHide: true }, (err, stdout, stderr) => {
+      // Daily trigger at specified time, interactive with highest privileges
+      const dailyArgs = ['/Create', '/TN', taskName, '/TR', tr, '/SC', 'DAILY', '/ST', time, '/RL', 'HIGHEST', '/IT', '/F'];
+      execFile(cmd, dailyArgs, { windowsHide: true }, (err, stdout, stderr) => {
         if (err) return reject(new Error(stderr || err.message));
-        resolve(stdout || 'OK');
+        // Add ONLOGON fallback so jobbet körs när användaren loggar in om datorn sov
+        const logonName = `${taskName}_OnLogon`;
+        const logonArgs = ['/Create', '/TN', logonName, '/TR', tr, '/SC', 'ONLOGON', '/RL', 'HIGHEST', '/IT', '/F'];
+        execFile(cmd, logonArgs, { windowsHide: true }, (err2, stdout2, stderr2) => {
+          if (err2) return reject(new Error(stderr2 || err2.message));
+          resolve(`${stdout || 'OK'}\n${stdout2 || 'OK'}`);
+        });
       });
     });
   },
   scheduleRemove: ({ taskName = '3DF_Scanner_Auto_Upload' } = {}) => {
     return new Promise((resolve, reject) => {
-      execFile('schtasks', ['/Delete', '/TN', taskName, '/F'], { windowsHide: true }, (err, stdout, stderr) => {
+      const del = (name) => new Promise((res, rej) => {
+        execFile('schtasks', ['/Delete', '/TN', name, '/F'], { windowsHide: true }, (err, stdout, stderr) => {
+          if (err) return rej(new Error(stderr || err.message));
+          res(stdout || 'OK');
+        });
+      });
+      Promise.allSettled([del(taskName), del(`${taskName}_OnLogon`)])
+        .then(results => resolve(results.map(r => r.value || r.reason?.message).join('\n')))
+        .catch(reject);
+    });
+  },
+  scheduleRun: ({ taskName = '3DF_Scanner_Auto_Upload' } = {}) => {
+    return new Promise((resolve, reject) => {
+      execFile('schtasks', ['/Run', '/TN', taskName], { windowsHide: true }, (err, stdout, stderr) => {
         if (err) return reject(new Error(stderr || err.message));
         resolve(stdout || 'OK');
       });

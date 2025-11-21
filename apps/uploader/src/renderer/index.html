@@ -163,6 +163,7 @@
         <div class="actions" style="margin-top:10px">
           <button id="btnAuto">Kör automatisk uppladdning</button>
           <button id="btnInstallSched" class="secondary">Schemalägg dagligen</button>
+          <button id="btnRunSched" class="secondary">Kör schema nu</button>
           <button id="btnRemoveSched" class="secondary">Ta bort schema</button>
         </div>
       </section>
@@ -657,6 +658,14 @@
           logLine(`Schemaläggning skapad kl ${t} (root=${root}, yesterday=${includeYesterday}).`);
         } catch (e) {
           logLine(`Misslyckades skapa schema: ${e.message || e}`);
+        }
+      });
+      document.getElementById('btnRunSched').addEventListener('click', async () => {
+        try {
+          await window.uploader.scheduleRun({});
+          logLine('Schemat startades manuellt.');
+        } catch (e) {
+          logLine(`Misslyckades starta schema: ${e.message || e}`);
         }
       });
       document.getElementById('btnRemoveSched').addEventListener('click', async () => {

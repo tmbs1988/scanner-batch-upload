@@ -1,3 +1,9 @@
+## 0.1.10 - 2025-11-21
+
+- Schema: Daglig körning skapas nu med interaktivt läge och högsta behörighet.
+- Fallback: Extra “vid inloggning”-jobb skapas så batchen körs även om datorn sov.
+- UI: Knapp “Kör schema nu” för snabb manuell test från appen.
+
 ## 0.1.9 - 2025-11-21
 
 - OTA: Testrelease för automatisk uppdatering från 0.1.8 (inga funktionsändringar).

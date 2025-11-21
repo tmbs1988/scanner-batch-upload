@@ -9,6 +9,10 @@
 
 - Rebuild: inkluderar updater‑loggning och schemafixar i den offentliga releasen.
 
+## 0.1.24 - 2025-11-21
+
+- Fix: NSIS installer stänger nu automatiskt körande app-instanser med taskkill före installation.
+
 ## 0.1.23 - 2025-11-21
 
 - Fix: Återgå till fungerande auto-update mekanism från v0.1.18 (quitAndInstall direkt) + behåll .just-updated flagga för tray-start.

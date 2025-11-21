@@ -9,6 +9,10 @@
 
 - Rebuild: inkluderar updater‑loggning och schemafixar i den offentliga releasen.
 
+## 0.1.16 - 2025-11-21
+
+- UX: Rotmapp prefylls med D:\LSF350 (användaren ändrar bara om annan path behövs).
+
 ## 0.1.15 - 2025-11-21
 
 - **Intern scheduler**: Appen har nu egen inbyggd timer istället för Windows Task Scheduler.

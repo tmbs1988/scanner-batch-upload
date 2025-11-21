@@ -9,6 +9,10 @@
 
 - Rebuild: inkluderar updater‑loggning och schemafixar i den offentliga releasen.
 
+## 0.1.13 - 2025-11-21
+
+- OTA: Verifierar att `latest.yml` publiceras korrekt för Generic‑provider.
+
 ## 0.1.12 - 2025-11-21
 
 - OTA: Växla klientens provider till Generic (hämtar `latest.yml` från Releases/Latest/Download).

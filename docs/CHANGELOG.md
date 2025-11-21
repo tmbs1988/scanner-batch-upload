@@ -9,6 +9,10 @@
 
 - Rebuild: inkluderar updater‑loggning och schemafixar i den offentliga releasen.
 
+## 0.1.23 - 2025-11-21
+
+- Fix: Återgå till fungerande auto-update mekanism från v0.1.18 (quitAndInstall direkt) + behåll .just-updated flagga för tray-start.
+
 ## 0.1.22 - 2025-11-21
 
 - UX: Uppdateringar laddas ner automatiskt men installeras först när användaren stänger appen (löser file-lock problem).

@@ -239,41 +239,17 @@ app.whenReady().then(() => {
       autoUpdater.on('download-progress', (p) => sendUpd(`Downloading: ${Math.round(p?.percent || 0)}%`));
       // Installera direkt när nedladdning är klar (tyst läge på Windows)
       autoUpdater.on('update-downloaded', () => {
-        sendUpd('Update downloaded, will install on next restart.');
+        sendUpd('Update downloaded, restarting...');
         // Sätt flagga så appen startar i tray efter omstart
         try {
           const flagPath = path.join(app.getPath('userData'), '.just-updated');
           fs.writeFileSync(flagPath, '', 'utf8');
         } catch {}
         
-        // Visa notification i tray att uppdatering är redo
-        try {
-          if (tray) {
-            if (tray.displayBalloon) {
-              tray.displayBalloon({ 
-                title: 'Uppdatering redo', 
-                content: 'Ny version installeras när du stänger appen nästa gång.' 
-              });
-            }
-            // Uppdatera tray-menyn för att visa att uppdatering väntar
-            const contextMenu = Menu.buildFromTemplate([
-              { label: 'Visa', click: () => { if (mainWin) { mainWin.show(); mainWin.focus(); } } },
-              { label: 'Synka nu (1 gång)', click: () => { if (mainWin && !mainWin.isDestroyed()) { mainWin.show(); mainWin.webContents.send('auto-run-once'); } } },
-              { type: 'separator' },
-              { label: '⚠️ Uppdatering väntar - starta om', click: () => { 
-                app.isQuitting = true;
-                if (mainWin) mainWin.close();
-                if (tray) tray.destroy();
-                setTimeout(() => { autoUpdater.quitAndInstall(true, true); }, 500);
-              }},
-              { type: 'separator' },
-              { label: 'Avsluta', click: () => { app.isQuitting = true; app.quit(); } }
-            ]);
-            tray.setContextMenu(contextMenu);
-          }
-        } catch (e) {
-          console.error('Tray update error', e);
-        }
+        // Installera och starta om direkt (samma som v0.1.18 som fungerade)
+        setImmediate(() => {
+          autoUpdater.quitAndInstall(false, true);
+        });
       });
       
       // Kolla direkt vid start

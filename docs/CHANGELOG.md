@@ -9,6 +9,10 @@
 
 - Rebuild: inkluderar updater‑loggning och schemafixar i den offentliga releasen.
 
+## 0.1.20 - 2025-11-21
+
+- UX: Fix för tray-minimering efter auto-uppdatering (använder userData-flagga istället för args).
+
 ## 0.1.19 - 2025-11-21
 
 - UX: Efter auto-uppdatering startar appen minimerad till tray (stör inte användaren).

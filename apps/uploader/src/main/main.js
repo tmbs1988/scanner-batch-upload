@@ -88,7 +88,14 @@ function createWindow() {
   win.loadURL(url.toString());
   
   // Avgör om fönstret ska visas eller starta minimerat till tray
-  const startHidden = hasArg('--hidden') || hasArg('--auto-restart');
+  // Kolla om vi precis uppdaterat (flagga i userData)
+  const justUpdatedPath = path.join(app.getPath('userData'), '.just-updated');
+  const startHidden = hasArg('--hidden') || hasArg('--auto-restart') || fs.existsSync(justUpdatedPath);
+  
+  // Rensa flaggan direkt
+  if (fs.existsSync(justUpdatedPath)) {
+    try { fs.unlinkSync(justUpdatedPath); } catch {}
+  }
   
   win.once('ready-to-show', () => {
     if (startHidden) {
@@ -239,10 +246,14 @@ app.whenReady().then(() => {
           }
         } catch {}
         sendUpd('Update downloaded, restarting...');
-        // Starta om med --auto-restart så appen öppnas i tray
+        // Sätt flagga så appen startar i tray efter omstart
+        try {
+          const flagPath = path.join(app.getPath('userData'), '.just-updated');
+          fs.writeFileSync(flagPath, '', 'utf8');
+        } catch {}
+        // Starta om
         setImmediate(() => {
-          app.relaunch({ args: process.argv.slice(1).concat(['--auto-restart']) });
-          autoUpdater.quitAndInstall(true, false); // isSilent=true, isForceRunAfter=false (vi hanterar relaunch själva)
+          autoUpdater.quitAndInstall(true, true);
         });
       });
       

@@ -162,9 +162,7 @@
         </div>
         <div class="actions" style="margin-top:10px">
           <button id="btnAuto">Kör automatisk uppladdning</button>
-          <button id="btnInstallSched" class="secondary">Schemalägg dagligen</button>
-          <button id="btnRunSched" class="secondary">Kör schema nu</button>
-          <button id="btnRemoveSched" class="secondary">Ta bort schema</button>
+          <button id="btnToggleSchedule" class="secondary">Aktivera automatisk körning</button>
         </div>
       </section>
     </main>
@@ -651,34 +649,43 @@
         logLine('Auto‑körning klar.');
       });
 
-      // Schedule buttons
-      document.getElementById('btnInstallSched').addEventListener('click', async () => {
+      // Internal scheduler toggle
+      (async () => {
+        const btnToggle = document.getElementById('btnToggleSchedule');
+        const timeEl = document.getElementById('dailyTime');
+        const rootEl = document.getElementById('rootDir');
+        const yesterdayEl = document.getElementById('includeYesterday');
+        
+        // Ladda sparad config
         try {
-          const t = document.getElementById('dailyTime').value || '01:30';
-          const root = (document.getElementById('rootDir').value && document.getElementById('rootDir').value.trim()) || 'D:\\\\LSF350';
-          const includeYesterday = document.getElementById('includeYesterday').checked;
-          await window.uploader.scheduleInstall({ time: t, includeYesterday, root, quitOnDone: true });
-          logLine(`Schemaläggning skapad kl ${t} (root=${root}, yesterday=${includeYesterday}).`);
-        } catch (e) {
-          logLine(`Misslyckades skapa schema: ${e.message || e}`);
-        }
-      });
-      document.getElementById('btnRunSched').addEventListener('click', async () => {
-        try {
-          await window.uploader.scheduleRun({});
-          logLine('Schemat startades manuellt.');
-        } catch (e) {
-          logLine(`Misslyckades starta schema: ${e.message || e}`);
-        }
-      });
-      document.getElementById('btnRemoveSched').addEventListener('click', async () => {
-        try {
-          await window.uploader.scheduleRemove({});
-          logLine('Schemaläggning borttagen.');
-        } catch (e) {
-          logLine(`Misslyckades ta bort schema: ${e.message || e}`);
-        }
-      });
+          const cfg = await window.uploader.loadScheduleConfig();
+          if (cfg) {
+            if (cfg.enabled) btnToggle.textContent = 'Inaktivera automatisk körning';
+            if (cfg.time) timeEl.value = cfg.time;
+            if (cfg.root) rootEl.value = cfg.root;
+            if (cfg.includeYesterday !== undefined) yesterdayEl.checked = cfg.includeYesterday;
+          }
+        } catch {}
+        
+        btnToggle.addEventListener('click', async () => {
+          try {
+            const cfg = await window.uploader.loadScheduleConfig();
+            const nowEnabled = cfg && cfg.enabled;
+            const newEnabled = !nowEnabled;
+            const config = {
+              enabled: newEnabled,
+              time: timeEl.value || '01:30',
+              root: rootEl.value.trim() || 'D:\\LSF350',
+              includeYesterday: yesterdayEl.checked,
+            };
+            await window.uploader.saveScheduleConfig(config);
+            btnToggle.textContent = newEnabled ? 'Inaktivera automatisk körning' : 'Aktivera automatisk körning';
+            logLine(newEnabled ? `Automatisk körning aktiverad kl ${config.time}` : 'Automatisk körning inaktiverad');
+          } catch (e) {
+            logLine(`Fel vid schema-toggle: ${e.message || e}`);
+          }
+        });
+      })();
 
       // Auto-mode via args (Task Scheduler)
       (async () => {

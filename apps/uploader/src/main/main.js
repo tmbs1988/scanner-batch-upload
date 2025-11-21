@@ -8,6 +8,7 @@ let runOnce = false;
 let tray = null;
 let mainWin = null;
 let winStatePath = null;
+let scheduleTimer = null;
 
 function loadWindowState() {
   try {
@@ -191,6 +192,20 @@ app.whenReady().then(() => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 
+  // Sätt autostart (Windows)
+  try {
+    app.setLoginItemSettings({
+      openAtLogin: true,
+      path: process.execPath,
+      args: [],
+    });
+  } catch (e) {
+    console.warn('Failed to set autostart', e);
+  }
+
+  // Starta intern scheduler
+  startInternalScheduler();
+
   // OTA update check (only when packaged)
   try {
     if (app.isPackaged) {
@@ -234,7 +249,7 @@ app.on('window-all-closed', () => {
   }
 });
 
-app.on('before-quit', () => { app.isQuitting = true; });
+app.on('before-quit', () => { app.isQuitting = true; if (scheduleTimer) clearInterval(scheduleTimer); });
 
 // Renderer notifies when auto-run finished
 ipcMain.on('auto-done', () => {
@@ -243,4 +258,56 @@ ipcMain.on('auto-done', () => {
   }
 });
 
+// Intern scheduler: läs config och kör vid vald tid
+function startInternalScheduler() {
+  const configPath = path.join(app.getPath('userData'), 'schedule-config.json');
+  let config = null;
+  try {
+    if (fs.existsSync(configPath)) {
+      config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    }
+  } catch {}
+  
+  if (!config || !config.enabled) return;
+  
+  const checkSchedule = () => {
+    const now = new Date();
+    const [hh, mm] = (config.time || '01:30').split(':').map(Number);
+    if (now.getHours() === hh && now.getMinutes() === mm) {
+      // Trigga batch
+      if (mainWin && !mainWin.isDestroyed()) {
+        mainWin.webContents.send('auto-run-once');
+      }
+    }
+  };
+  
+  // Kolla varje minut
+  scheduleTimer = setInterval(checkSchedule, 60000);
+  // Kolla direkt vid start också (om vi precis startat vid rätt minut)
+  setTimeout(checkSchedule, 5000);
+}
+
+// IPC: spara/läs schedule config
+ipcMain.handle('save-schedule-config', async (_e, cfg) => {
+  try {
+    const file = path.join(app.getPath('userData'), 'schedule-config.json');
+    fs.writeFileSync(file, JSON.stringify(cfg, null, 2), 'utf8');
+    // Restart scheduler
+    if (scheduleTimer) clearInterval(scheduleTimer);
+    startInternalScheduler();
+    return true;
+  } catch {
+    return false;
+  }
+});
+
+ipcMain.handle('load-schedule-config', async () => {
+  try {
+    const file = path.join(app.getPath('userData'), 'schedule-config.json');
+    if (fs.existsSync(file)) {
+      return JSON.parse(fs.readFileSync(file, 'utf8'));
+    }
+  } catch {}
+  return null;
+});
 

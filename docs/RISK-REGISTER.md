@@ -1,5 +1,8 @@
 # Risk Register
 
+- R-006: Flera app-instanser startar vid schemalagd körning (Task Scheduler).
+  - **Mitigation (0.1.15)**: Bytt till intern scheduler; endast en instans körs i tray, timer triggar batch inifrån appen.
+
 - R-001: OTA uppdateringar körs inte (fel artefakt/ingen tagg).
   - Mitigation: Bygg endast NSIS installer; ta bort `portable` i lokala byggscript; GitHub Actions release på tagg med `permissions: contents: write` och `fetch-depth: 0`; test i staging.
 

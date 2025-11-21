@@ -9,6 +9,15 @@
 
 - Rebuild: inkluderar updater‑loggning och schemafixar i den offentliga releasen.
 
+## 0.1.15 - 2025-11-21
+
+- **Intern scheduler**: Appen har nu egen inbyggd timer istället för Windows Task Scheduler.
+  - Endast en app-instans körs (i tray).
+  - Schemat triggas inifrån appen vid vald tid.
+  - Inställningar sparas lokalt och laddas vid start.
+- **Autostart**: Appen startar automatiskt vid Windows-start (minimerad till tray).
+- **UI**: "Aktivera/Inaktivera automatisk körning"-knapp ersätter Task Scheduler-knappar.
+
 ## 0.1.14 - 2025-11-21
 
 - Loggar använder nu lokal systemtid istället för UTC för tydligare tidsvisning.

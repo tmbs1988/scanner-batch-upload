@@ -74,49 +74,9 @@ contextBridge.exposeInMainWorld('uploader', {
     return out;
   },
   pathJoin: (...segs) => path.join(...segs),
-  scheduleInstall: ({ taskName = '3DF_Scanner_Auto_Upload', time = '01:30', includeYesterday = false, root = 'D:\\\\LSF350', quitOnDone = true } = {}) => {
-    return new Promise((resolve, reject) => {
-      const exe = process.execPath.replace(/"/g, '');
-      const args = ['--auto', '--root', root];
-      if (includeYesterday) args.push('--yesterday');
-      if (quitOnDone) args.push('--quit-on-done');
-      const tr = `"${exe}" ${args.join(' ')}`;
-      const cmd = 'schtasks';
-      // Daily trigger at specified time, interactive with highest privileges
-      const dailyArgs = ['/Create', '/TN', taskName, '/TR', tr, '/SC', 'DAILY', '/ST', time, '/RL', 'HIGHEST', '/IT', '/F'];
-      execFile(cmd, dailyArgs, { windowsHide: true }, (err, stdout, stderr) => {
-        if (err) return reject(new Error(stderr || err.message));
-        // Add ONLOGON fallback so jobbet körs när användaren loggar in om datorn sov
-        const logonName = `${taskName}_OnLogon`;
-        const logonArgs = ['/Create', '/TN', logonName, '/TR', tr, '/SC', 'ONLOGON', '/RL', 'HIGHEST', '/IT', '/F'];
-        execFile(cmd, logonArgs, { windowsHide: true }, (err2, stdout2, stderr2) => {
-          if (err2) return reject(new Error(stderr2 || err2.message));
-          resolve(`${stdout || 'OK'}\n${stdout2 || 'OK'}`);
-        });
-      });
-    });
-  },
-  scheduleRemove: ({ taskName = '3DF_Scanner_Auto_Upload' } = {}) => {
-    return new Promise((resolve, reject) => {
-      const del = (name) => new Promise((res, rej) => {
-        execFile('schtasks', ['/Delete', '/TN', name, '/F'], { windowsHide: true }, (err, stdout, stderr) => {
-          if (err) return rej(new Error(stderr || err.message));
-          res(stdout || 'OK');
-        });
-      });
-      Promise.allSettled([del(taskName), del(`${taskName}_OnLogon`)])
-        .then(results => resolve(results.map(r => r.value || r.reason?.message).join('\n')))
-        .catch(reject);
-    });
-  },
-  scheduleRun: ({ taskName = '3DF_Scanner_Auto_Upload' } = {}) => {
-    return new Promise((resolve, reject) => {
-      execFile('schtasks', ['/Run', '/TN', taskName], { windowsHide: true }, (err, stdout, stderr) => {
-        if (err) return reject(new Error(stderr || err.message));
-        resolve(stdout || 'OK');
-      });
-    });
-  },
+  // Spara/läs scheduler-inställningar via main IPC
+  saveScheduleConfig: (config) => ipcRenderer.invoke('save-schedule-config', config),
+  loadScheduleConfig: () => ipcRenderer.invoke('load-schedule-config'),
   autoDone: () => { ipcRenderer.send('auto-done'); },
   onAutoRun: (cb) => { try { ipcRenderer.on('auto-run-once', cb); } catch {} },
   onUpdateLog: (cb) => { try { ipcRenderer.on('u-upd-log', (_e, m) => cb(m)); } catch {} },

@@ -9,6 +9,10 @@
 
 - Rebuild: inkluderar updater‑loggning och schemafixar i den offentliga releasen.
 
+## 0.1.25 - 2025-11-21
+
+- Fix: NSIS graceful + force close, och sätter .just-updated flagga direkt i installern för tray-start.
+
 ## 0.1.24 - 2025-11-21
 
 - Fix: NSIS installer stänger nu automatiskt körande app-instanser med taskkill före installation.

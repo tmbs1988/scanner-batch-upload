@@ -25,6 +25,7 @@ nsis:
   runAfterFinish: true
   shortcutName: "3D Fotteknik Scanner Batch Uploader"
   include: "build/installer.nsh"
+  deleteAppDataOnUninstall: false
 extraMetadata:
   # Use package.json version; remove hardcoded override
   # version: "0.1.1"

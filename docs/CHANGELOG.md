@@ -5,6 +5,10 @@
 - UI: Knapp “Kör schema nu” för snabb manuell test från appen.
 - Updater: Synlig logg i UI för “checking/available/downloaded/error”.
 
+## 0.1.11 - 2025-11-21
+
+- Rebuild: inkluderar updater‑loggning och schemafixar i den offentliga releasen.
+
 ## 0.1.9 - 2025-11-21
 
 - OTA: Testrelease för automatisk uppdatering från 0.1.8 (inga funktionsändringar).

@@ -1,5 +1,8 @@
 # Risk Register
 
+- R-007: Upload failar p.g.a. intermittenta nätverksfel; data försvinner.
+  - **Mitigation (0.1.18)**: Retry 3 gånger per fil (exp. backoff); verifiera efter FINALIZE; spara misslyckade i retry-kö för nästa körning.
+
 - R-006: Flera app-instanser startar vid schemalagd körning (Task Scheduler).
   - **Mitigation (0.1.15)**: Bytt till intern scheduler; endast en instans körs i tray, timer triggar batch inifrån appen.
 

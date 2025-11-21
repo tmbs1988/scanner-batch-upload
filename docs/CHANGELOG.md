@@ -9,6 +9,13 @@
 
 - Rebuild: inkluderar updater‑loggning och schemafixar i den offentliga releasen.
 
+## 0.1.18 - 2025-11-21
+
+- **Retry-logik**: Fil-upload försöker 3 gånger med exponentiell backoff (5s, 15s) vid fel.
+- **Verifiering**: Efter FINALIZE körs en preflight-check för att bekräfta att transmission är komplett.
+- **Retry-kö**: Misslyckade/ofullständiga uploads sparas lokalt och körs om vid nästa auto-körning.
+- **Robust**: Säkerställer att alla patienter laddas upp korrekt, även vid intermittenta nätverksfel.
+
 ## 0.1.17 - 2025-11-21
 
 - OTA: Kolla efter uppdateringar var 30:e minut (tidigare bara vid app-start).

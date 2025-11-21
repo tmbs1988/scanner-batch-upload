@@ -191,6 +191,43 @@
           try { window.uploader.appendLog(msg); } catch {}
         }
       }
+      
+      // Retry queue management
+      const RETRY_QUEUE_KEY = 'upload_retry_queue';
+      function loadRetryQueue() {
+        try {
+          const raw = localStorage.getItem(RETRY_QUEUE_KEY);
+          return raw ? JSON.parse(raw) : [];
+        } catch {
+          return [];
+        }
+      }
+      function saveToRetryQueue(entry) {
+        try {
+          const queue = loadRetryQueue();
+          // Undvik duplicates baserat på dir+phone+scanTime
+          const exists = queue.some(e => e.dir === entry.dir && e.phone === entry.phone && e.scanTime === entry.scanTime);
+          if (!exists) {
+            queue.push({ ...entry, addedAt: new Date().toISOString() });
+            localStorage.setItem(RETRY_QUEUE_KEY, JSON.stringify(queue));
+            logLine(`Lade till i retry-kö: ${entry.dir}`);
+          }
+        } catch (e) {
+          logLine(`Kunde inte spara retry-kö: ${e.message}`);
+        }
+      }
+      function clearRetryQueue() {
+        try {
+          localStorage.removeItem(RETRY_QUEUE_KEY);
+        } catch {}
+      }
+      function removeFromRetryQueue(entry) {
+        try {
+          let queue = loadRetryQueue();
+          queue = queue.filter(e => !(e.dir === entry.dir && e.phone === entry.phone && e.scanTime === entry.scanTime));
+          localStorage.setItem(RETRY_QUEUE_KEY, JSON.stringify(queue));
+        } catch {}
+      }
       // Global felhookar så att dolda fel syns i loggen
       window.addEventListener('error', (e) => {
         try { logLine(`JS-error: ${e?.message || e}`); } catch {}
@@ -346,11 +383,21 @@
           r.readAsDataURL(file);
         });
       }
-      async function postJson(url, body) {
-        const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.error || res.statusText);
-        return data;
+      async function postJson(url, body, retries = 3) {
+        for (let attempt = 1; attempt <= retries; attempt++) {
+          try {
+            const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.error || res.statusText);
+            return data;
+          } catch (err) {
+            if (attempt === retries) throw err;
+            // Exponentiell backoff: 5s, 15s
+            const delay = attempt === 1 ? 5000 : 15000;
+            logLine(`Försök ${attempt}/${retries} misslyckades: ${err.message}. Försöker igen om ${delay/1000}s...`);
+            await new Promise(r => setTimeout(r, delay));
+          }
+        }
       }
       async function pingServer() {
         const base = getBaseUrl();
@@ -385,6 +432,33 @@
         if (!csvInput.files?.length) { logLine('Välj feetbase.csv.'); return; }
         const csvText = await csvInput.files[0].text();
         const lines   = parseCsvLines(csvText);
+        // Processa retry-kö först (om det finns misslyckade uploads från förra körningen)
+        const retryQueue = loadRetryQueue();
+        if (retryQueue.length > 0) {
+          logLine(`Retry-kö: ${retryQueue.length} patienter att försöka igen...`);
+          for (const entry of retryQueue) {
+            try {
+              logLine(`Retry: ${entry.dir} (${entry.reason})`);
+              // Kör preflight igen för att se vad som saknas
+              const preResp = await postJson(`${baseUrl}/api/scanners/upload-manual-file`, {
+                store_name: entry.store, user_name: entry.user, phone: entry.phone, scanTime: entry.scanTime, checkOnly: true
+              });
+              if (preResp.existing && preResp.existing.complete === 'ja') {
+                logLine(`✓ ${entry.dir} är nu komplett – tar bort från retry-kö`);
+                removeFromRetryQueue(entry);
+                continue;
+              }
+              // Om fortfarande ofullständig, försök hitta filerna och ladda upp igen
+              // (Detta kräver att vi har tillgång till originalfilerna – om inte, logga varning)
+              logLine(`⚠️ ${entry.dir} är fortfarande ofullständig. Manuell granskning krävs.`);
+              // Behåll i kö för nästa körning
+            } catch (e) {
+              logLine(`Retry misslyckades för ${entry.dir}: ${e.message}`);
+            }
+          }
+        }
+        
+        // Fortsätt med dagens/gårdagens scans
         logLine(`Läste ${lines.length} CSV-rader.`);
         // Try to auto-detect store_name from CSV once
         const currentStore = getStoreName();
@@ -495,6 +569,19 @@
             // FINALIZE
             const fin = await postJson(`${baseUrl}/api/scanners/upload-manual-file`, { transmissionId: tx, scannerId: sid, finalize: true });
             logLine(`Jobb skapat: ${fin.jobId}`);
+            
+            // Verifiera att transmission är komplett
+            await new Promise(r => setTimeout(r, 2000)); // Vänta 2s för processing
+            const verifyResp = await postJson(`${baseUrl}/api/scanners/upload-manual-file`, {
+              store_name: store, user_name: user, phone, scanTime, checkOnly: true
+            });
+            if (!verifyResp.existing || verifyResp.existing.complete !== 'ja') {
+              const missing = verifyResp.existing?.missing?.join(', ') || 'okänt';
+              logLine(`⚠️ Verifiering misslyckades för ${dir}: saknar ${missing}`);
+              saveToRetryQueue({ dir, store, user, phone, scanTime, reason: `Ofullständig efter upload: ${missing}` });
+            } else {
+              logLine(`✓ Verifierad: ${dir} är komplett`);
+            }
           } catch (e) {
             logLine(`Fel i ${dir}: ${e.message || e}`);
           }
@@ -641,6 +728,19 @@
               // FINALIZE
               const fin = await postJson(`${baseUrl}/api/scanners/upload-manual-file`, { transmissionId: tx, scannerId: sid, finalize: true });
               logLine(`Jobb skapat: ${fin.jobId} [${dirName}]`);
+              
+              // Verifiera att transmission är komplett
+              await new Promise(r => setTimeout(r, 2000)); // Vänta 2s för processing
+              const verifyResp = await postJson(`${baseUrl}/api/scanners/upload-manual-file`, {
+                store_name: store, user_name: user, phone, scanTime, checkOnly: true
+              });
+              if (!verifyResp.existing || verifyResp.existing.complete !== 'ja') {
+                const missing = verifyResp.existing?.missing?.join(', ') || 'okänt';
+                logLine(`⚠️ Verifiering misslyckades för ${dirName}: saknar ${missing}`);
+                saveToRetryQueue({ dir: dirName, store, user, phone, scanTime, reason: `Ofullständig efter upload: ${missing}` });
+              } else {
+                logLine(`✓ Verifierad: ${dirName} är komplett`);
+              }
             } catch (e) {
               logLine(`Fel i ${dirEntry.name}: ${e.message || e}`);
             }

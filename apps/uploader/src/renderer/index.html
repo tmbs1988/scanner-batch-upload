@@ -183,7 +183,10 @@
       } catch {}
       const logEl = document.getElementById('log');
       function logLine(msg) {
-        const ts = new Date().toISOString();
+        // Använd lokal systemtid istället för UTC
+        const now = new Date();
+        const pad = (n) => String(n).padStart(2, '0');
+        const ts = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
         logEl.value += `[${ts}] ${msg}\n`;
         logEl.scrollTop = logEl.scrollHeight;
         if (window.uploader && window.uploader.appendLog) {

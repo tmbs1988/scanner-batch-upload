@@ -9,6 +9,10 @@
 
 - Rebuild: inkluderar updater‑loggning och schemafixar i den offentliga releasen.
 
+## 0.1.14 - 2025-11-21
+
+- Loggar använder nu lokal systemtid istället för UTC för tydligare tidsvisning.
+
 ## 0.1.13 - 2025-11-21
 
 - OTA: Verifierar att `latest.yml` publiceras korrekt för Generic‑provider.

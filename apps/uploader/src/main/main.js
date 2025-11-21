@@ -233,10 +233,19 @@ app.whenReady().then(() => {
         // isSilent=true (Windows), isForceRunAfter=true för att starta om automatiskt
         setImmediate(() => autoUpdater.quitAndInstall(true, true));
       });
+      
+      // Kolla direkt vid start
       autoUpdater.checkForUpdates().catch(err => {
         console.error('autoUpdater check error', err);
         sendUpd(`Check failed: ${err?.message || err}`);
       });
+      
+      // Kolla var 30:e minut för nya uppdateringar
+      setInterval(() => {
+        autoUpdater.checkForUpdates().catch(err => {
+          console.error('autoUpdater periodic check error', err);
+        });
+      }, 30 * 60 * 1000); // 30 minuter
     }
   } catch (e) {
     console.error('autoUpdater error', e);

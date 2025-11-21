@@ -9,6 +9,10 @@
 
 - Rebuild: inkluderar updater‑loggning och schemafixar i den offentliga releasen.
 
+## 0.1.17 - 2025-11-21
+
+- OTA: Kolla efter uppdateringar var 30:e minut (tidigare bara vid app-start).
+
 ## 0.1.16 - 2025-11-21
 
 - UX: Rotmapp prefylls med D:\LSF350 (användaren ändrar bara om annan path behövs).

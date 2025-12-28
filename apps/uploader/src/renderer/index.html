@@ -529,13 +529,17 @@
             const pre = await postJson(`${baseUrl}/api/scanners/upload-manual-file`, {
               checkOnly: true, store_name: store, user_name: user, phone, scanTime
             });
-            const ex = pre.existing || { feetdata:false, report:false, modelL:false, modelR:false, images:{arch:0,foot3d:0,pronator:0} };
-            const needFeet = !!pre.missing?.feetdata && lines.length > csvIndex;
-            const needReport = !!pre.missing?.report;
-            const needModelL = !!pre.missing?.modelL;
-            const needModelR = !!pre.missing?.modelR;
-            const needImages = !!pre.missing?.arch || !!pre.missing?.foot3d;
-            if (!needFeet && !needReport && !needModelL && !needModelR && !needImages) {
+            const ex = pre.existing || { feetdata:false, report:false, modelL:false, modelR:false, images:{arch:0,foot3d:0,pronator:0}, sides:{ archL:false,archR:false,foot3dL:false,foot3dR:false } };
+            const det = pre.missingDetailed || {};
+            const needFeet = (!!det.feetLeft || !!det.feetRight) && lines.length > csvIndex;
+            const needReport = !!(det.report ?? pre.missing?.report);
+            const needModelL = !!(det.modelL ?? pre.missing?.modelL);
+            const needModelR = !!(det.modelR ?? pre.missing?.modelR);
+            const needArchL = !!det.archL;
+            const needArchR = !!det.archR;
+            const needFoot3dL = !!det.foot3dL;
+            const needFoot3dR = !!det.foot3dR;
+            if (!needFeet && !needReport && !needModelL && !needModelR && !needArchL && !needArchR && !needFoot3dL && !needFoot3dR) {
               logLine(`[${dirName}] Komplett i huvudappen – hoppar över.`);
               continue;
             }
@@ -552,13 +556,22 @@
             logLine(`Transmission: ${tx}`);
 
             // UPLOAD filer
+            const isLeft = (n) => /(^|[_-])l(\.|$)|(^|[_-])left(\b|_)/i.test(String(n||'').toLowerCase());
+            const isRight = (n) => /(^|[_-])r(\.|$)|(^|[_-])right(\b|_)/i.test(String(n||'').toLowerCase());
             for (const item of items) {
               const name = (item.relPath.split(/[\\/]/).pop()) || item.file.name;
               const kind = classify(name);
               if (kind === 'report' && !needReport) continue;
               if (kind === 'modelL' && !needModelL) continue;
               if (kind === 'modelR' && !needModelR) continue;
-              if ((kind === 'arch' || kind === 'foot3d' || kind === 'pronator') && !needImages) continue;
+              if (kind === 'arch') {
+                if (isLeft(name) && !needArchL) continue;
+                if (isRight(name) && !needArchR) continue;
+              }
+              if (kind === 'foot3d') {
+                if (isLeft(name) && !needFoot3dL) continue;
+                if (isRight(name) && !needFoot3dR) continue;
+              }
               const base64 = await fileToBase64(item.file);
               const contentType = item.file.type || (item.isImage ? 'image/bmp' : 'application/octet-stream');
               const dataBase64  = `data:${contentType};base64,${base64}`;
@@ -670,14 +683,18 @@
                 checkOnly: true, store_name: store, user_name: user, phone, scanTime
               });
               const miss = pre.missing || {};
-              const lack = Object.entries(miss).filter(([k,v]) => v).map(([k]) => k).join(', ') || 'inget';
+              const det = pre.missingDetailed || {};
+              const lack = Object.entries({ ...miss, ...det }).filter(([k,v]) => v).map(([k]) => k).join(', ') || 'inget';
               logLine(`[${dirName}] i huvudapp: complete=${pre.complete ? 'ja' : 'nej'}, saknar: ${lack}`);
-              const needFeet = !!miss.feetdata;
-              const needReport = !!miss.report;
-              const needModelL = !!miss.modelL;
-              const needModelR = !!miss.modelR;
-              const needImages = !!miss.arch || !!miss.foot3d;
-              if (!needFeet && !needReport && !needModelL && !needModelR && !needImages) {
+              const needFeet = !!det.feetLeft || !!det.feetRight;
+              const needReport = !!(det.report ?? miss.report);
+              const needModelL = !!(det.modelL ?? miss.modelL);
+              const needModelR = !!(det.modelR ?? miss.modelR);
+              const needArchL = !!det.archL;
+              const needArchR = !!det.archR;
+              const needFoot3dL = !!det.foot3dL;
+              const needFoot3dR = !!det.foot3dR;
+              if (!needFeet && !needReport && !needModelL && !needModelR && !needArchL && !needArchR && !needFoot3dL && !needFoot3dR) {
                 // Already complete → skip
                 continue;
               }
@@ -694,6 +711,8 @@
               logLine(`Transmission: ${tx} [${dirName}]`);
 
               // UPLOAD
+              const isLeft = (n) => /(^|[_-])l(\.|$)|(^|[_-])left(\b|_)/i.test(String(n||'').toLowerCase());
+              const isRight = (n) => /(^|[_-])r(\.|$)|(^|[_-])right(\b|_)/i.test(String(n||'').toLowerCase());
               for (const item of items) {
                 // Read file as base64 via Node fs
                 // Small helper through DataURL prefix
@@ -713,7 +732,14 @@
                 if (kind === 'report' && !needReport) continue;
                 if (kind === 'modelL' && !needModelL) continue;
                 if (kind === 'modelR' && !needModelR) continue;
-                if ((kind === 'arch' || kind === 'foot3d' || kind === 'pronator') && !needImages) continue;
+                if (kind === 'arch') {
+                  if (isLeft(item.name) && !needArchL) continue;
+                  if (isRight(item.name) && !needArchR) continue;
+                }
+                if (kind === 'foot3d') {
+                  if (isLeft(item.name) && !needFoot3dL) continue;
+                  if (isRight(item.name) && !needFoot3dR) continue;
+                }
 
                 const contentType =
                   item.isImage ? 'image/bmp' :

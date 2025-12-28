@@ -721,12 +721,18 @@
             logLine(`Jobb skapat: ${fin.jobId}`);
             try { fetch(`${baseUrl}/api/cron/process-pending-transmissions`, { method: 'GET' }).catch(()=>{}); } catch {}
             
-            // Verifiera att transmission är komplett
-            await new Promise(r => setTimeout(r, 2000)); // Vänta 2s för processing
-            const verifyResp = await postJson(`${baseUrl}/api/scanners/upload-manual-file`, {
-              store_name: store, user_name: user, phone, scanTime, checkOnly: true
-            });
-            if (!verifyResp.existing || verifyResp.existing.complete !== 'ja') {
+              // Verifiera att transmission är komplett (med kort retry för CF/cron-latens)
+              let verifyResp = null;
+              for (let attempt=1; attempt<=3; attempt++) {
+                await new Promise(r => setTimeout(r, attempt===1 ? 1000 : attempt===2 ? 2000 : 3000));
+                try {
+                  verifyResp = await postJson(`${baseUrl}/api/scanners/upload-manual-file`, {
+                    store_name: store, user_name: user, phone, scanTime, checkOnly: true
+                  });
+                  if (verifyResp?.existing && verifyResp?.existing?.complete === 'ja') break;
+                } catch {}
+              }
+              if (!verifyResp?.existing || verifyResp.existing.complete !== 'ja') {
               const missing = verifyResp.existing?.missing?.join(', ') || 'okänt';
               logLine(`⚠️ Verifiering misslyckades för ${dir}: saknar ${missing}`);
               saveToRetryQueue({ dir, store, user, phone, scanTime, reason: `Ofullständig efter upload: ${missing}` });

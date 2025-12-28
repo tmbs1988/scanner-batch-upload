@@ -27,6 +27,13 @@
 - Cron‑fallback från klient: efter FINALIZE triggas även `GET /api/cron/process-pending-transmissions` för säkerhets skull.
 - Kräver backendens preflight‑ändringar (strict `files[].url`, `missingDetailed`).
 
+## 0.1.31 - 2025-12-28
+
+- Alla filer laddas upp via GCS signed PUT (inga stora request bodies till Vercel).
+- Auto‑finalize: Cloud Function på GCS “finalize” uppdaterar Firestore (`files[]`, `*_url`) automatiskt.
+- Oförändrat 3DOE/edoe‑flöde (gäller endast batch‑uploadern).
+- Fortsatt per‑fil continue och förbättrad feltext från 0.1.30.
+
 ## 0.1.25 - 2025-11-21
 
 - Fix: NSIS graceful + force close, och sätter .just-updated flagga direkt i installern för tray-start.

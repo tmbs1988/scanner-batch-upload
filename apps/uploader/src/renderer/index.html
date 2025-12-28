@@ -676,16 +676,11 @@
               continue;
             }
 
-            // INIT (create/ensure) – skicka csvText endast om vi behöver feetdata
-            const feetLines = lines.slice(csvIndex, Math.min(csvIndex + 2, lines.length));
-            csvIndex += 2;
-            const initResp = await postJson(`${baseUrl}/api/scanners/upload-manual-file`, {
-              store_name: store, user_name: user, phone, scanTime, csvText: needFeet ? feetLines.join('\n') : undefined
-            });
-            const tx  = initResp.transmissionId;
-            const sid = initResp.scannerId;
-            if (!tx || !sid) throw new Error('Kunde inte skapa/hitta transmission');
-            logLine(`Transmission: ${tx}`);
+            // Använd alltid befintlig transmission – skapa aldrig ny här
+            const tx  = pre.transmissionId;
+            const sid = pre.scannerId || pre.scannerId;
+            if (!tx || !sid) { logLine(`[${dirName}] Ingen befintlig transmission – hoppar över.`); continue; }
+            logLine(`Transmission (befintlig): ${tx} [${dirName}]`);
 
             // UPLOAD filer
             const isLeft = (n) => /(^|[_-])l(\.|$)|(^|[_-])left(\b|_)/i.test(String(n||'').toLowerCase());
@@ -843,16 +838,11 @@
                 continue;
               }
 
-              // INIT (csvText endast om feetdata saknas)
-              const feetLines = filteredLines.slice(csvIndex, Math.min(csvIndex + 2, filteredLines.length));
-              csvIndex += 2;
-              const initResp = await postJson(`${baseUrl}/api/scanners/upload-manual-file`, {
-                store_name: store, user_name: user, phone, scanTime, csvText: needFeet ? feetLines.join('\n') : undefined
-              });
-              const tx  = initResp.transmissionId;
-              const sid = initResp.scannerId;
-              if (!tx || !sid) throw new Error('Kunde inte skapa/hitta transmission');
-              logLine(`Transmission: ${tx} [${dirName}]`);
+              // Använd befintlig transmission – skapa aldrig ny här
+              const tx  = pre.transmissionId;
+              const sid = pre.scannerId || pre.scannerId;
+              if (!tx || !sid) { logLine(`[${dirName}] Ingen befintlig transmission – hoppar över.`); continue; }
+              logLine(`Transmission (befintlig): ${tx} [${dirName}]`);
 
               // UPLOAD
               const isLeft = (n) => /(^|[_-])l(\.|$)|(^|[_-])left(\b|_)/i.test(String(n||'').toLowerCase());

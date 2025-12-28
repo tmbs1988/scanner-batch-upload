@@ -1,4 +1,4 @@
-## 0.1.33 - 2025-12-28
+## 0.1.34 - 2025-12-28
 
 - Enkel väg: använder alltid befintlig `transmissionId` (ingen INIT/create).
 - Uppladdning: Signed PUT till GCS, finalize + cron‑fallback och verifierings‑retry kvar.

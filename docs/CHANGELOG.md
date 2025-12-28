@@ -1,3 +1,10 @@
+## 0.1.33 - 2025-12-28
+
+- Enkel väg: använder alltid befintlig `transmissionId` (ingen INIT/create).
+- Uppladdning: Signed PUT till GCS, finalize + cron‑fallback och verifierings‑retry kvar.
+- CSV: hanteras via separat UI‑funktion (oförändrat).
+- Fixar: UI-flödet hoppar över om ingen transmission hittas, inga nya tomma transmissions skapas.
+
 ## 0.1.10 - 2025-11-21
 
 - Schema: Daglig körning skapas nu med interaktivt läge och högsta behörighet.

@@ -167,6 +167,19 @@
       </section>
     </main>
 
+    <!-- Dry run selection modal (manual mode only) -->
+    <div id="dryRunModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); align-items:center; justify-content:center; z-index:9999;">
+      <div style="background:var(--card-bg); color:var(--text); border:1px solid var(--border); border-radius:8px; width:min(720px,92vw); max-height:80vh; display:flex; flex-direction:column;">
+        <div style="padding:12px 16px; border-bottom:1px solid var(--border); font-weight:600;">Välj patienter/skanningar att uppdatera</div>
+        <div id="dryRunList" style="padding:12px 16px; overflow:auto;"></div>
+        <div style="padding:12px 16px; border-top:1px solid var(--border); display:flex; gap:8px; justify-content:flex-end;">
+          <button id="dryRunSelectAll" class="secondary">Välj alla</button>
+          <button id="dryRunCancel" class="secondary">Avbryt</button>
+          <button id="dryRunConfirm">Bekräfta urval</button>
+        </div>
+      </div>
+    </div>
+
     <script type="module">
       // Tvinga mörkt läge som standard oavsett OS; kan ändras till 'light' via localStorage ('cfg_theme')
       try {
@@ -274,6 +287,53 @@
         } catch {}
         await pingServer().catch(() => {});
       })();
+
+      // Dry run findings/selection (manual mode)
+      let dryRunFindings = [];
+      let dryRunSelectedKeys = null; // Set<string>
+      function openDryRunModal(findings) {
+        const modal = document.getElementById('dryRunModal');
+        const list  = document.getElementById('dryRunList');
+        const btnAll = document.getElementById('dryRunSelectAll');
+        const btnCancel = document.getElementById('dryRunCancel');
+        const btnOk = document.getElementById('dryRunConfirm');
+        list.innerHTML = '';
+        const needOnes = findings.filter(f => f.need);
+        if (needOnes.length === 0) {
+          list.innerHTML = '<div class="small">Inget att uppdatera – alla är redan kompletta.</div>';
+        } else {
+          for (const f of needOnes) {
+            const id = `sel_${f.key.replace(/[^a-z0-9]/gi,'_')}`;
+            const row = document.createElement('div');
+            row.style.padding = '8px 0';
+            row.style.borderBottom = '1px solid var(--border)';
+            row.innerHTML = `
+              <label style="display:flex; gap:8px; align-items:flex-start; cursor:pointer">
+                <input type="checkbox" id="${id}" data-key="${f.key}" checked />
+                <span>
+                  <div><b>${f.dir}</b></div>
+                  <div class="small">patient=${f.user} | phone=${f.phone} | scanTime=${f.scanTime}</div>
+                  <div class="small">saknar: ${f.lack || 'inget'}</div>
+                </span>
+              </label>
+            `;
+            list.appendChild(row);
+          }
+        }
+        btnAll.onclick = () => {
+          const boxes = list.querySelectorAll('input[type="checkbox"]');
+          const allChecked = Array.from(boxes).every(b => b.checked);
+          boxes.forEach(b => b.checked = !allChecked);
+        };
+        btnCancel.onclick = () => { modal.style.display = 'none'; };
+        btnOk.onclick = () => {
+          const boxes = list.querySelectorAll('input[type="checkbox"]');
+          dryRunSelectedKeys = new Set(Array.from(boxes).filter(b => b.checked).map(b => b.getAttribute('data-key')));
+          modal.style.display = 'none';
+          logLine(`Valt ${dryRunSelectedKeys.size} skanning(ar) för uppladdning.`);
+        };
+        modal.style.display = 'flex';
+      }
 
       function parseCsvLines(text) { return text.split(/\r?\n/).map(l => l.trim()).filter(Boolean); }
       function parseCsvTable(text) {
@@ -430,6 +490,8 @@
         const csvInput = document.getElementById('csvInput');
         if (!dirInput.files?.length) { logLine('Välj en dagsmapp först.'); return; }
         if (!csvInput.files?.length) { logLine('Välj feetbase.csv.'); return; }
+        dryRunFindings = [];
+        dryRunSelectedKeys = null;
         const csvText = await csvInput.files[0].text();
         const lines   = parseCsvLines(csvText);
         // Processa retry-kö först (om det finns misslyckade uploads från förra körningen)
@@ -490,13 +552,31 @@
               const mf = pre.matchedFields || {};
               logLine(`[${dir}] match: tx=${pre.transmissionId}, mode=${matched}, phoneMatch=${mf.phoneMatched?'ja':'nej'}, nameMatch=${mf.userMatched?'ja':'nej'}`);
             }
-            const lack = Object.entries(miss).filter(([k,v]) => v).map(([k]) => k).join(', ') || 'inget';
+            const det = pre.missingDetailed || {};
+            const allMissing = { ...miss, ...det };
+            const lack = Object.entries(allMissing).filter(([k,v]) => v).map(([k]) => k).join(', ') || 'inget';
             logLine(`[${dir}] i huvudapp: complete=${pre.complete ? 'ja' : 'nej'}, saknar: ${lack}`);
+            const needFeet = !!det.feetLeft || !!det.feetRight;
+            const needReport = !!(det.report ?? miss.report);
+            const needModelL = !!(det.modelL ?? miss.modelL);
+            const needModelR = !!(det.modelR ?? miss.modelR);
+            const needArchL = !!det.archL;
+            const needArchR = !!det.archR;
+            const needFoot3dL = !!det.foot3dL;
+            const needFoot3dR = !!det.foot3dR;
+            const need = needFeet || needReport || needModelL || needModelR || needArchL || needArchR || needFoot3dL || needFoot3dR;
+            dryRunFindings.push({
+              key: `${dir}|${phone}|${scanTime}`,
+              dir: dirName, user, phone, scanTime,
+              transmissionId: pre.transmissionId || null,
+              lack, need
+            });
           } catch (e) {
             logLine(`[${dir}] preflight-fel: ${e.message || e}`);
           }
         }
         logLine('Torrkörning klar.');
+        try { openDryRunModal(dryRunFindings); } catch {}
       });
 
       document.getElementById('btnStart').addEventListener('click', async () => {
@@ -519,6 +599,17 @@
         let csvIndex = 0;
 
         for (const [dir, items] of groups.entries()) {
+          // Begränsa till urval från torrkörningen om sådant finns
+          if (dryRunSelectedKeys && dryRunSelectedKeys.size > 0) {
+            const dirName = (dir.split('/').pop() || '').trim();
+            const { phone } = parseFolderName(dirName);
+            const scanTimeKey = new Date(Math.max(...items.map(i => i.file.lastModified))).toISOString();
+            const key = `${dir}|${phone}|${scanTimeKey}`;
+            if (!dryRunSelectedKeys.has(key)) {
+              logLine(`Hoppar över (ej vald i torrkörning): ${dir}`);
+              continue;
+            }
+          }
           try {
             logLine(`Bearbetar ${dir}…`);
             const dirName = (dir.split('/').pop() || '').trim();

@@ -447,8 +447,20 @@
         for (let attempt = 1; attempt <= retries; attempt++) {
           try {
             const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-            const data = await res.json().catch(() => ({}));
-            if (!res.ok) throw new Error(data.error || res.statusText);
+            const resClone = res.clone();
+            let data = {};
+            try { data = await res.json(); } catch {}
+            if (!res.ok) {
+              let errMsg = (data && (data).error) || res.statusText || '';
+              if (!errMsg) {
+                try {
+                  const txt = await resClone.text();
+                  errMsg = (txt || '').slice(0, 300);
+                } catch {}
+              }
+              const code = res.status || 0;
+              throw new Error(`${code} ${errMsg}`.trim());
+            }
             return data;
           } catch (err) {
             if (attempt === retries) throw err;
@@ -666,13 +678,20 @@
               const base64 = await fileToBase64(item.file);
               const contentType = item.file.type || (item.isImage ? 'image/bmp' : 'application/octet-stream');
               const dataBase64  = `data:${contentType};base64,${base64}`;
-              await postJson(`${baseUrl}/api/scanners/upload-manual-file`, { transmissionId: tx, scannerId: sid, filename: name, contentType, dataBase64 });
-              logLine(`Uppladdad: ${name}`);
+              try {
+                await postJson(`${baseUrl}/api/scanners/upload-manual-file`, { transmissionId: tx, scannerId: sid, filename: name, contentType, dataBase64 });
+                logLine(`Uppladdad: ${name}`);
+              } catch (e) {
+                logLine(`[${dir}] Uppladdning misslyckades: ${name} — ${e?.message || e}`);
+                saveToRetryQueue({ dir, store, user, phone, scanTime, reason: `Upload fail: ${name} — ${e?.message || e}` });
+                continue;
+              }
             }
 
             // FINALIZE
             const fin = await postJson(`${baseUrl}/api/scanners/upload-manual-file`, { transmissionId: tx, scannerId: sid, finalize: true });
             logLine(`Jobb skapat: ${fin.jobId}`);
+            try { fetch(`${baseUrl}/api/cron/process-pending-transmissions`, { method: 'GET' }).catch(()=>{}); } catch {}
             
             // Verifiera att transmission är komplett
             await new Promise(r => setTimeout(r, 2000)); // Vänta 2s för processing
@@ -836,15 +855,24 @@
                   item.isImage ? 'image/bmp' :
                   (item.name.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream');
                 const dataBase64 = `data:${contentType};base64,${binary}`;
-                await postJson(`${baseUrl}/api/scanners/upload-manual-file`, {
-                  transmissionId: tx, scannerId: sid, filename: item.name, contentType, dataBase64
-                });
-                logLine(`[${dirName}] uppladdad: ${item.name}`);
+                try {
+                  await postJson(`${baseUrl}/api/scanners/upload-manual-file`, {
+                    transmissionId: tx, scannerId: sid, filename: item.name, contentType, dataBase64
+                  });
+                  logLine(`[${dirName}] uppladdad: ${item.name}`);
+                } catch (e) {
+                  logLine(`[${dirName}] Uppladdning misslyckades: ${item.name} — ${e?.message || e}`);
+                  // Lägg i retry-kö med orsak och fortsätt med nästa fil
+                  saveToRetryQueue({ dir: dirName, store, user, phone, scanTime, reason: `Upload fail: ${item.name} — ${e?.message || e}` });
+                  continue;
+                }
               }
 
               // FINALIZE
               const fin = await postJson(`${baseUrl}/api/scanners/upload-manual-file`, { transmissionId: tx, scannerId: sid, finalize: true });
               logLine(`Jobb skapat: ${fin.jobId} [${dirName}]`);
+              // Klient-fallback: trigga cron även från klienten
+              try { fetch(`${baseUrl}/api/cron/process-pending-transmissions`, { method: 'GET' }).catch(()=>{}); } catch {}
               
               // Verifiera att transmission är komplett
               await new Promise(r => setTimeout(r, 2000)); // Vänta 2s för processing

@@ -20,6 +20,13 @@
 - CSV: skicka endast om `feetLeft/feetRight` saknas.
 - Krav: backend version med nya preflight‑fält (`missingDetailed`, `completeMinimal`, `completeStrict`, `inconsistent`).
 
+## 0.1.30 - 2025-12-28
+
+- Per‑fil continue: om en fil fallerar läggs den i retry‑kön och resten av filerna fortsätter laddas upp.
+- Förbättrad feltext i logg: statuskod + servertext (visar t.ex. 403/415/validering).
+- Cron‑fallback från klient: efter FINALIZE triggas även `GET /api/cron/process-pending-transmissions` för säkerhets skull.
+- Kräver backendens preflight‑ändringar (strict `files[].url`, `missingDetailed`).
+
 ## 0.1.25 - 2025-11-21
 
 - Fix: NSIS graceful + force close, och sätter .just-updated flagga direkt i installern för tray-start.

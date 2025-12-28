@@ -24,5 +24,8 @@
 - R-006: Schema körs inte om datorn är avstängd/sömn eller ingen inloggad.
   - Mitigation: Skapa även ett ONLOGON‑jobb; använd interaktivt läge `/IT` och `/RL HIGHEST`; exponera “Kör schema nu” för manuell test.
 
+- R-008: Felaktig komplett‑bedömning på server → app laddar inte upp saknade filer.
+  - Mitigation (0.1.27): Appen följer backendens `missingDetailed` och kräver att serverns `files[]`‑poster har giltig `url` innan de räknas som “finns”. Endast saknade sidor (L/R) laddas upp. CSV skickas endast om feetdata saknas per sida.
+
 
 

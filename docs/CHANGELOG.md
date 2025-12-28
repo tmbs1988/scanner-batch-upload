@@ -13,6 +13,13 @@
 
 - Fix: Scheduler loggar nu status vid start (config loaded, enabled/disabled) till UI-loggen.
 
+## 0.1.27 - 2025-12-28
+
+- Preflight: honor `missingDetailed` från backend och följ strikt närvaro (räkna bara `files[].url` på servern).
+- Per-sida uppladdning: ladda endast `modelL/R`, `archL/R`, `foot3dL/R` och `report` som saknas enligt preflight.
+- CSV: skicka endast om `feetLeft/feetRight` saknas.
+- Krav: backend version med nya preflight‑fält (`missingDetailed`, `completeMinimal`, `completeStrict`, `inconsistent`).
+
 ## 0.1.25 - 2025-11-21
 
 - Fix: NSIS graceful + force close, och sätter .just-updated flagga direkt i installern för tray-start.

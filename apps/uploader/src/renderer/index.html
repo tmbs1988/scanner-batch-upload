@@ -497,6 +497,35 @@
         return window.uploader.pathJoin(root, String(y), m, dd);
       }
 
+      function base64ToBytes(b64) {
+        try {
+          const bin = atob(b64);
+          const len = bin.length;
+          const bytes = new Uint8Array(len);
+          for (let i = 0; i < len; i++) bytes[i] = bin.charCodeAt(i);
+          return bytes;
+        } catch {
+          return new Uint8Array();
+        }
+      }
+
+      async function uploadViaSigned(baseUrl, scannerId, transmissionId, name, contentType, fileBase64) {
+        const meta = await postJson(`${baseUrl}/api/scanners/request-upload`, {
+          scannerId, transmissionId, filename: name, contentType, size: Math.floor((fileBase64.length * 3) / 4)
+        });
+        const bytes = base64ToBytes(fileBase64);
+        const putRes = await fetch(meta.putUrl, {
+          method: 'PUT',
+          headers: { 'Content-Type': contentType },
+          body: bytes
+        });
+        if (!putRes.ok) {
+          let t = '';
+          try { t = await putRes.text(); } catch {}
+          throw new Error(`${putRes.status} ${t.slice(0, 300)}`);
+        }
+      }
+
       document.getElementById('btnDryRun').addEventListener('click', async () => {
         const dirInput = document.getElementById('dirInput');
         const csvInput = document.getElementById('csvInput');
@@ -676,10 +705,9 @@
                 if (isRight(name) && !needFoot3dR) continue;
               }
               const base64 = await fileToBase64(item.file);
-              const contentType = item.file.type || (item.isImage ? 'image/bmp' : 'application/octet-stream');
-              const dataBase64  = `data:${contentType};base64,${base64}`;
+              const contentType = item.file.type || (item.isImage ? 'image/bmp' : (name.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream'));
               try {
-                await postJson(`${baseUrl}/api/scanners/upload-manual-file`, { transmissionId: tx, scannerId: sid, filename: name, contentType, dataBase64 });
+                await uploadViaSigned(baseUrl, sid, tx, name, contentType, base64);
                 logLine(`Uppladdad: ${name}`);
               } catch (e) {
                 logLine(`[${dir}] Uppladdning misslyckades: ${name} — ${e?.message || e}`);

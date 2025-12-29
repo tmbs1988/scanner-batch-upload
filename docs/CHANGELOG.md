@@ -9,6 +9,11 @@
 - Behåller 0.1.37-beteendet: BMP (arch/foot3d/pronator) laddas alltid upp; rätt Content-Type för bilder; direktanrop till `/api/process-transmission` efter finalize.
 - Förberedelse för full paritet med “Ladda upp CSV”-flödet (admin-endpoint uppdaterar även scan.metadata). 
 
+## 0.1.39 (2025-12-29)
+- Genererar 3DOE‑kompatibel `scanData.json` från feetbase.csv när feetdata saknas, och laddar upp den till `scanner_data/{scannerId}/{transmissionId}/scanData.json`.
+- Backend kopierar nu `scanData.json` till `patients/{patientId}/scans/{scanId}/metadata/scan_metadata.json` och sätter `resources.scanData`.
+- Om `transmission.feetdata` finns används den för `scan.metadata.feetdata`; annars kan backend backfilla från JSON.
+
 ## 0.1.37 (2025-12-29)
 - Always upload BMP analysis files (arch/foot3d/pronator) if present locally, regardless of preflight “missing”.
 - Set correct Content-Type for images based on extension (bmp/png/jpg).

@@ -508,6 +508,14 @@
           return new Uint8Array();
         }
       }
+      function stringToBase64Utf8(s) {
+        try {
+          return btoa(unescape(encodeURIComponent(s)));
+        } catch {
+          // Fallback för redan‑ASCII
+          return btoa(s);
+        }
+      }
 
       async function uploadViaSigned(baseUrl, scannerId, transmissionId, name, contentType, fileBase64) {
         const meta = await postJson(`${baseUrl}/api/scanners/request-upload`, {
@@ -534,6 +542,134 @@
         if (lower.endsWith('.pdf')) return 'application/pdf';
         if (lower.endsWith('.oex') || lower.endsWith('.stl') || lower.endsWith('.obj')) return 'application/octet-stream';
         return 'application/octet-stream';
+      }
+
+      // ---- Feetbase → scanData.json (3DOE-kompatibel) ----
+      function toNum(v) {
+        const n = Number(String(v).replace(/[^0-9.+-]/g, ''));
+        return isFinite(n) ? n : null;
+      }
+      function normalizeToken(t) {
+        return String(t || '').toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '').replace(/\?/g,'').trim();
+      }
+      function includesAny(token, variants) {
+        const n = normalizeToken(token);
+        return variants.some(v => n.includes(normalizeToken(v)));
+      }
+      function parseFeetbaseLine(line) {
+        const tokens = String(line || '').split(',').map(s => s.trim());
+        if (tokens.length < 2) return null;
+        const sideIdx = tokens.findIndex(t => t === 'R' || t === 'L');
+        if (sideIdx === -1) return null;
+        const side = tokens[sideIdx] === 'R' ? 'RIGHTFOOT' : 'LEFTFOOT';
+        const foot = { foot_type: side };
+        // arch height (observerad offset)
+        const archHgtIdx = sideIdx + 13;
+        if (archHgtIdx < tokens.length) {
+          const n = toNum(tokens[archHgtIdx]); if (n !== null) foot.footArchHgt = n.toFixed(1);
+        }
+        // Clark + ArchAI via mönster
+        for (let i = 0; i <= tokens.length - 5; i++) {
+          const v = toNum(tokens[i]);
+          const n1 = toNum(tokens[i+1]);
+          const n2 = toNum(tokens[i+2]);
+          const n3 = toNum(tokens[i+3]);
+          const n4 = toNum(tokens[i+4]);
+          if (v !== null && v >= 10 && v <= 80 &&
+              n1 !== null && n1 > 0 && n1 <= 1.5 &&
+              n2 !== null && n2 >= 0 && n2 <= 1.5 &&
+              n3 !== null && n3 >= 0 && n3 <= 1.5 &&
+              n4 !== null && n4 >= 0 && n4 <= 1.5) {
+            foot.clarkAngle = v.toFixed(4);
+            foot.archAI = n1.toFixed(3);
+            break;
+          }
+        }
+        // Fallbacks
+        if (!foot.archAI) {
+          for (let i = sideIdx+1; i < tokens.length; i++) {
+            const n = toNum(tokens[i]); if (n !== null && n > 0 && n <= 1.5) { foot.archAI = n.toFixed(3); break; }
+          }
+        }
+        if (!foot.clarkAngle) {
+          for (let i = 0; i < tokens.length; i++) {
+            const v = toNum(tokens[i]); if (v !== null && v >= 10 && v <= 80) { foot.clarkAngle = v.toFixed(4); break; }
+          }
+        }
+        // HeelAngle
+        let heelResolved = false;
+        const formIdx = tokens.findIndex(t => normalizeToken(t).includes('fotform'));
+        if (formIdx > 0) {
+          const h = toNum(tokens[formIdx-1]); if (h !== null) { foot.heelAngle = h.toFixed(6); heelResolved = true; foot.PronatorType = h >= 0 ? 'VALGUS' : 'VARUS'; }
+        }
+        if (!heelResolved) {
+          const avgIdx = tokens.findIndex(t => normalizeToken(t).startsWith('genomsnittlig fot'));
+          if (avgIdx >= 0 && avgIdx + 1 < tokens.length) {
+            const h2 = toNum(tokens[avgIdx+1]); if (h2 !== null) { foot.heelAngle = h2.toFixed(6); heelResolved = true; const dirTok = normalizeToken(tokens[avgIdx+2] || ''); foot.PronatorType = dirTok.includes('valgus') ? 'VALGUS' : (dirTok.includes('varus') ? 'VARUS' : (h2 >= 0 ? 'VALGUS' : 'VARUS')); }
+          }
+        }
+        if (!heelResolved) {
+          const dirIdx = tokens.findIndex(t => /valgus|varus/i.test(t));
+          if (dirIdx > 0) {
+            const pv = toNum(tokens[dirIdx-1]); if (pv !== null) { foot.heelAngle = pv.toFixed(6); foot.PronatorType = /valgus/i.test(tokens[dirIdx]) ? 'VALGUS' : 'VARUS'; }
+          }
+        }
+        if (!foot.heelAngle) {
+          const hasNeutral = tokens.some(t => includesAny(t, ['genomsnittlig fot','genomsnittlig','average foot','average']));
+          if (hasNeutral) { foot.heelAngle = '0.000000'; foot.PronatorType = 'NEUTRAL'; }
+        }
+        // HalluxAngle
+        const hIdx = tokens.findIndex(t => includesAny(t, ['hallux']));
+        if (hIdx > 0) {
+          const hv = toNum(tokens[hIdx-1]); if (hv !== null) foot.halluxAngle = hv.toFixed(4);
+        }
+        if (!foot.halluxAngle) {
+          const hvTypeIdx = tokens.findIndex(t => includesAny(t, ['valgus','varus']));
+          if (hvTypeIdx > 0) {
+            const pv = toNum(tokens[hvTypeIdx-1]); if (pv !== null) foot.halluxAngle = pv.toFixed(4);
+          }
+        }
+        return foot;
+      }
+      function deriveTypes(foot) {
+        const archAI = Number(foot.archAI || '0');
+        const hallux = Math.abs(Number(foot.halluxAngle || '0'));
+        let ArchType = 'AVERAGE';
+        if (archAI <= 0.16) ArchType = 'HIGH';
+        else if (archAI >= 0.34) ArchType = 'LOW';
+        let HalluxType = 'AVERAGE';
+        if (hallux >= 25) HalluxType = 'SEVERE_HALLUX_VALGUS';
+        else if (hallux >= 15) HalluxType = 'MODERATE_HALLUX_VALGUS';
+        else if (hallux >= 10) HalluxType = 'MILD_HALLUX_VALGUS';
+        let PronatorType = foot.PronatorType || '';
+        if (!PronatorType) {
+          const heel = Number(foot.heelAngle || '0');
+          PronatorType = heel > 0 ? 'VALGUS' : heel < 0 ? 'VARUS' : 'NEUTRAL';
+        }
+        return { ArchType, HalluxType, PronatorType };
+      }
+      function buildScanDataFromLines(l1, l2) {
+        const f1 = parseFeetbaseLine(l1);
+        const f2 = parseFeetbaseLine(l2);
+        if (!f1 && !f2) return null;
+        const feet = [f1, f2].filter(Boolean);
+        const obj = {};
+        for (const f of feet) {
+          const types = deriveTypes(f);
+          const footObj = {
+            ArchType: types.ArchType,
+            PronatorType: types.PronatorType,
+            HalluxType: types.HalluxType,
+            archAI: f.archAI || '0.000',
+            footArchHgt: f.footArchHgt || '0.0',
+            clarkAngle: f.clarkAngle || '0.0',
+            heelAngle: f.heelAngle || '0.0',
+            halluxAngle: f.halluxAngle || '0.0'
+          };
+          if (f.foot_type === 'LEFTFOOT') obj.leftFoot = footObj;
+          if (f.foot_type === 'RIGHTFOOT') obj.rightFoot = footObj;
+        }
+        try { return JSON.stringify(obj); } catch { return null; }
       }
 
       document.getElementById('btnDryRun').addEventListener('click', async () => {
@@ -701,6 +837,19 @@
                 try {
                   await postJson(`${baseUrl}/api/scanners/upload-manual-file`, { transmissionId: tx, csvText: csvPayload });
                   logLine(`[${dirName}] Importerade feetdata via CSV.`);
+                  // Skapa och ladda upp scanData.json (3DOE‑kompatibel)
+                  const scanJson = buildScanDataFromLines(l1, l2);
+                  if (scanJson) {
+                    try {
+                      const b64 = stringToBase64Utf8(scanJson);
+                      await uploadViaSigned(baseUrl, sid, tx, 'scanData.json', 'application/json', b64);
+                      logLine(`[${dirName}] Laddade upp scanData.json.`);
+                    } catch (e) {
+                      logLine(`[${dirName}] Kunde inte ladda upp scanData.json: ${e?.message || e}`);
+                    }
+                  } else {
+                    logLine(`[${dirName}] Kunde inte bygga scanData.json från CSV.`);
+                  }
                   csvIndex += (l2 ? 2 : 1);
                 } catch (e) {
                   logLine(`[${dirName}] CSV‑import misslyckades: ${e?.message || e}`);
@@ -875,6 +1024,22 @@
                   try {
                     await postJson(`${baseUrl}/api/scanners/upload-manual-file`, { transmissionId: tx, csvText: csvPayload });
                     logLine(`[${dirName}] Importerade feetdata via CSV.`);
+                    // Skapa och ladda upp scanData.json
+                    const scanJson = buildScanDataFromLines(l1, l2);
+                    if (scanJson) {
+                      try {
+                        const b64 = stringToBase64Utf8(scanJson);
+                        await postJson(`${baseUrl}/api/scanners/upload-manual-file`, {
+                          transmissionId: tx, scannerId: sid, filename: 'scanData.json', contentType: 'application/json',
+                          dataBase64: `data:application/json;base64,${b64}`
+                        });
+                        logLine(`[${dirName}] Laddade upp scanData.json.`);
+                      } catch (e) {
+                        logLine(`[${dirName}] Kunde inte ladda upp scanData.json: ${e?.message || e}`);
+                      }
+                    } else {
+                      logLine(`[${dirName}] Kunde inte bygga scanData.json från CSV.`);
+                    }
                     csvIndex += (l2 ? 2 : 1);
                   } catch (e) {
                     logLine(`[${dirName}] CSV‑import misslyckades: ${e?.message || e}`);

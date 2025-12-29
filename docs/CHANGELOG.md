@@ -4,6 +4,11 @@
 - Keeps original filenames on upload (OEX/PDF/BMP) to mirror 3DOE.
 - Improved error logging around uploads and verification.
 
+## 0.1.37 (2025-12-29)
+- Always upload BMP analysis files (arch/foot3d/pronator) if present locally, regardless of preflight “missing”.
+- Set correct Content-Type for images based on extension (bmp/png/jpg).
+- Ensures backend can refresh analysis pipeline reliably on finalize + process-transmission.
+
 ## 0.1.35 - 2025-12-29
 
 - Remove client cron-fallback: efter FINALIZE kallar klienten direkt `POST /api/process-transmission` (ingen `GET /api/cron/process-pending-transmissions`).

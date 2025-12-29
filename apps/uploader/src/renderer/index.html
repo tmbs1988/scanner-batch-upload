@@ -526,6 +526,16 @@
         }
       }
 
+      function guessContentTypeByName(name) {
+        const lower = String(name || '').toLowerCase();
+        if (lower.endsWith('.bmp')) return 'image/bmp';
+        if (lower.endsWith('.png')) return 'image/png';
+        if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
+        if (lower.endsWith('.pdf')) return 'application/pdf';
+        if (lower.endsWith('.oex') || lower.endsWith('.stl') || lower.endsWith('.obj')) return 'application/octet-stream';
+        return 'application/octet-stream';
+      }
+
       document.getElementById('btnDryRun').addEventListener('click', async () => {
         const dirInput = document.getElementById('dirInput');
         const csvInput = document.getElementById('csvInput');
@@ -688,19 +698,12 @@
             for (const item of items) {
               const name = (item.relPath.split(/[\\/]/).pop()) || item.file.name;
               const kind = classify(name);
+              // Ladda alltid BMP (arch/foot3d/pronator) för att säkerställa processning; gate endast report/models
               if (kind === 'report' && !needReport) continue;
               if (kind === 'modelL' && !needModelL) continue;
               if (kind === 'modelR' && !needModelR) continue;
-              if (kind === 'arch') {
-                if (isLeft(name) && !needArchL) continue;
-                if (isRight(name) && !needArchR) continue;
-              }
-              if (kind === 'foot3d') {
-                if (isLeft(name) && !needFoot3dL) continue;
-                if (isRight(name) && !needFoot3dR) continue;
-              }
               const base64 = await fileToBase64(item.file);
-              const contentType = item.file.type || (item.isImage ? 'image/bmp' : (name.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream'));
+              const contentType = item.file.type || guessContentTypeByName(name);
               try {
                 await uploadViaSigned(baseUrl, sid, tx, name, contentType, base64);
                 logLine(`Uppladdad: ${name}`);
@@ -864,21 +867,12 @@
                   if (n.includes('pronator')) return 'pronator';
                   return 'other';
                 })();
+                // Ladda alltid BMP (arch/foot3d/pronator); gate endast report/models
                 if (kind === 'report' && !needReport) continue;
                 if (kind === 'modelL' && !needModelL) continue;
                 if (kind === 'modelR' && !needModelR) continue;
-                if (kind === 'arch') {
-                  if (isLeft(item.name) && !needArchL) continue;
-                  if (isRight(item.name) && !needArchR) continue;
-                }
-                if (kind === 'foot3d') {
-                  if (isLeft(item.name) && !needFoot3dL) continue;
-                  if (isRight(item.name) && !needFoot3dR) continue;
-                }
 
-                const contentType =
-                  item.isImage ? 'image/bmp' :
-                  (item.name.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream');
+                const contentType = guessContentTypeByName(item.name);
                 const dataBase64 = `data:${contentType};base64,${binary}`;
                 try {
                   await postJson(`${baseUrl}/api/scanners/upload-manual-file`, {

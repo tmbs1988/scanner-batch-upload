@@ -692,6 +692,24 @@
             if (!tx || !sid) { logLine(`[${dirName}] Ingen befintlig transmission – hoppar över.`); continue; }
             logLine(`Transmission (befintlig): ${tx} [${dirName}]`);
 
+            // CSV-import av feetdata om saknas
+            if (needFeet) {
+              const l1 = lines[csvIndex] || '';
+              const l2 = lines[csvIndex + 1] || '';
+              const csvPayload = [l1, l2].filter(Boolean).join('\n');
+              if (csvPayload) {
+                try {
+                  await postJson(`${baseUrl}/api/scanners/upload-manual-file`, { transmissionId: tx, csvText: csvPayload });
+                  logLine(`[${dirName}] Importerade feetdata via CSV.`);
+                  csvIndex += (l2 ? 2 : 1);
+                } catch (e) {
+                  logLine(`[${dirName}] CSV‑import misslyckades: ${e?.message || e}`);
+                }
+              } else {
+                logLine(`[${dirName}] Ingen CSV‑rad kvar att importera (feetdata saknas).`);
+              }
+            }
+
             // UPLOAD filer
             const isLeft = (n) => /(^|[_-])l(\.|$)|(^|[_-])left(\b|_)/i.test(String(n||'').toLowerCase());
             const isRight = (n) => /(^|[_-])r(\.|$)|(^|[_-])right(\b|_)/i.test(String(n||'').toLowerCase());
@@ -847,6 +865,24 @@
               const sid = pre.scannerId || pre.scannerId;
               if (!tx || !sid) { logLine(`[${dirName}] Ingen befintlig transmission – hoppar över.`); continue; }
               logLine(`Transmission (befintlig): ${tx} [${dirName}]`);
+
+              // CSV-import av feetdata om saknas
+              if (needFeet) {
+                const l1 = filteredLines[csvIndex] || '';
+                const l2 = filteredLines[csvIndex + 1] || '';
+                const csvPayload = [l1, l2].filter(Boolean).join('\n');
+                if (csvPayload) {
+                  try {
+                    await postJson(`${baseUrl}/api/scanners/upload-manual-file`, { transmissionId: tx, csvText: csvPayload });
+                    logLine(`[${dirName}] Importerade feetdata via CSV.`);
+                    csvIndex += (l2 ? 2 : 1);
+                  } catch (e) {
+                    logLine(`[${dirName}] CSV‑import misslyckades: ${e?.message || e}`);
+                  }
+                } else {
+                  logLine(`[${dirName}] Ingen CSV‑rad kvar att importera (feetdata saknas).`);
+                }
+              }
 
               // UPLOAD
               const isLeft = (n) => /(^|[_-])l(\.|$)|(^|[_-])left(\b|_)/i.test(String(n||'').toLowerCase());

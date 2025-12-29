@@ -4,6 +4,11 @@
 - Keeps original filenames on upload (OEX/PDF/BMP) to mirror 3DOE.
 - Improved error logging around uploads and verification.
 
+## 0.1.38 (2025-12-29)
+- CSV auto-import: när preflight saknar `feetLeft/feetRight` skickar klienten 1–2 rader från feetbase till samma `transmissionId` via `upload-manual-file` (`csvText`) innan filuppladdningar.
+- Behåller 0.1.37-beteendet: BMP (arch/foot3d/pronator) laddas alltid upp; rätt Content-Type för bilder; direktanrop till `/api/process-transmission` efter finalize.
+- Förberedelse för full paritet med “Ladda upp CSV”-flödet (admin-endpoint uppdaterar även scan.metadata). 
+
 ## 0.1.37 (2025-12-29)
 - Always upload BMP analysis files (arch/foot3d/pronator) if present locally, regardless of preflight “missing”.
 - Set correct Content-Type for images based on extension (bmp/png/jpg).

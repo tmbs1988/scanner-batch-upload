@@ -1,3 +1,9 @@
+## 0.1.35 - 2025-12-29
+
+- Remove client cron-fallback: efter FINALIZE kallar klienten direkt `POST /api/process-transmission` (ingen `GET /api/cron/process-pending-transmissions`).
+- Följer 3DOE-flödet: låter backend kopiera OEX/PDF/BMP till patientens scan-mapp och trigga konverteringen.
+- Ingen INIT av ny transmission – använder alltid befintlig `transmissionId`.
+
 ## 0.1.34 - 2025-12-28
 
 - Enkel väg: använder alltid befintlig `transmissionId` (ingen INIT/create).

@@ -713,8 +713,9 @@
 
             // FINALIZE
             const fin = await postJson(`${baseUrl}/api/scanners/upload-manual-file`, { transmissionId: tx, scannerId: sid, finalize: true });
-            logLine(`Jobb skapat: ${fin.jobId}`);
-            try { fetch(`${baseUrl}/api/cron/process-pending-transmissions`, { method: 'GET' }).catch(()=>{}); } catch {}
+            logLine(`Finaliserad transmission: ${tx}`);
+            // Direkt processering: kalla backendens process-transmission (ingen cron-fallback)
+            try { await postJson(`${baseUrl}/api/process-transmission`, { transmissionId: tx }); } catch (e) { logLine(`process-transmission fel: ${e?.message || e}`); }
             
               // Verifiera att transmission är komplett (med kort retry för CF/cron-latens)
               let verifyResp = null;
@@ -894,9 +895,9 @@
 
               // FINALIZE
               const fin = await postJson(`${baseUrl}/api/scanners/upload-manual-file`, { transmissionId: tx, scannerId: sid, finalize: true });
-              logLine(`Jobb skapat: ${fin.jobId} [${dirName}]`);
-              // Klient-fallback: trigga cron även från klienten
-              try { fetch(`${baseUrl}/api/cron/process-pending-transmissions`, { method: 'GET' }).catch(()=>{}); } catch {}
+              logLine(`Finaliserad transmission: ${tx} [${dirName}]`);
+              // Direkt processering: kalla backendens process-transmission (ingen cron-fallback)
+              try { await postJson(`${baseUrl}/api/process-transmission`, { transmissionId: tx }); } catch (e) { logLine(`process-transmission fel: ${e?.message || e}`); }
               
               // Verifiera att transmission är komplett
               await new Promise(r => setTimeout(r, 2000)); // Vänta 2s för processing

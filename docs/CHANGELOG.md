@@ -1,3 +1,9 @@
+## 0.1.36 (2025-12-29)
+- Finalize no longer expects/prints jobId; logs “Finaliserad transmission …”.
+- Always calls `/api/process-transmission` directly after finalize (no cron fallback).
+- Keeps original filenames on upload (OEX/PDF/BMP) to mirror 3DOE.
+- Improved error logging around uploads and verification.
+
 ## 0.1.35 - 2025-12-29
 
 - Remove client cron-fallback: efter FINALIZE kallar klienten direkt `POST /api/process-transmission` (ingen `GET /api/cron/process-pending-transmissions`).

@@ -1,3 +1,13 @@
+## 0.1.40 (2025-12-30)
+- Deterministisk CSV‑matchning per skanning: i stället för sekventiell parning väljs nu två rader (L/R) från `feetbase.csv` per undermapp baserat på:
+  - exakt `phone` (om tillgängligt),
+  - normaliserat `user_name`, samt
+  - närmast `ScanTime` inom ±24h.
+- Bygger `scanData.json` från just dessa matchade rader och laddar upp den till transmissionen innan finalize.
+- Samma två rader skickas till backend (`upload-manual-file` med `csvText`) för att fylla `feetdata`.
+- Tydligare loggar i UI: visar vilka CSV‑rader (ScanTime) som valdes för L/R.
+- Gäller både manuell “Start” och auto‑körning.
+
 ## 0.1.36 (2025-12-29)
 - Finalize no longer expects/prints jobId; logs “Finaliserad transmission …”.
 - Always calls `/api/process-transmission` directly after finalize (no cron fallback).

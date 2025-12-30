@@ -357,6 +357,47 @@
         }
         return { header, rows: out };
       }
+      // Normalisera namn och tidsskillnad
+      function normalizeName(s) {
+        return String(s || '')
+          .toLowerCase()
+          .normalize('NFD')
+          .replace(/\p{Diacritic}/gu, '')
+          .replace(/\s+/g, ' ')
+          .trim();
+      }
+      function timeDiffMinutes(a, b) {
+        if (!(a instanceof Date) || !(b instanceof Date)) return Number.POSITIVE_INFINITY;
+        return Math.abs((a.getTime() - b.getTime()) / 60000);
+      }
+      // Hitta två bästa CSV‑rader (L/R) för given undermapp (matchar phone/namn + närmaste ScanTime)
+      function findCsvRowsForPatient(csvRows, dirUser, dirPhone, folderScanTimeIso, opts = {}) {
+        const windowMinutes = opts.windowMinutes ?? (24 * 60); // ±24h
+        const folderTime = new Date(folderScanTimeIso);
+        const normUser = normalizeName(dirUser);
+        const candidates = [];
+        for (const r of csvRows) {
+          const phone = String(r.obj['phone'] || '').trim();
+          const uname = String(r.obj['user_name'] || '').trim();
+          const footTok = (r.obj['foot_type'] || r.obj['foot'] || '').toString().toUpperCase();
+          const side = footTok === 'L' || footTok === 'LEFT' ? 'L' : (footTok === 'R' || footTok === 'RIGHT' ? 'R' : '');
+          if (!side) continue;
+          const scorePhone = (dirPhone && phone && phone === dirPhone) ? 100 : 0;
+          const scoreName  = (normUser && normalizeName(uname) === normUser) ? 60 : 0;
+          const tdiff = r.scanTime ? timeDiffMinutes(r.scanTime, folderTime) : Number.POSITIVE_INFINITY;
+          const scoreTime  = isFinite(tdiff) ? Math.max(0, windowMinutes - tdiff) : 0;
+          const totalScore = scorePhone + scoreName + scoreTime;
+          candidates.push({ row: r, side, totalScore, tdiff });
+        }
+        candidates.sort((a, b) => (b.totalScore - a.totalScore) || (a.tdiff - b.tdiff));
+        let left = candidates.find(c => c.side === 'L');
+        let right = candidates.find(c => c.side === 'R');
+        if (!left)  left  = candidates.filter(c => c.side === 'L').sort((a,b) => a.tdiff - b.tdiff)[0];
+        if (!right) right = candidates.filter(c => c.side === 'R').sort((a,b) => a.tdiff - b.tdiff)[0];
+        const leftRaw = left?.row?.raw || '';
+        const rightRaw = right?.row?.raw || '';
+        return { leftRaw, rightRaw, leftMatch: left?.row, rightMatch: right?.row };
+      }
       function extractStoreNameFromCsv(text) {
         const rows = parseCsvLines(text).filter(Boolean);
         const splitRow = (row) => row.split(/[;,:\t]+/).map(s => s.trim());
@@ -780,10 +821,10 @@
         if (!ok) { logLine('Avbryter – kan inte nå servern.'); return; }
 
         const csvText = await csvInput.files[0].text();
-        const lines   = parseCsvLines(csvText);
+        const table   = parseCsvTable(csvText);
         const whitelisted = whitelistFiles(dirInput.files);
         const groups = groupByDir(whitelisted);
-        let csvIndex = 0;
+        // Sekventiellt index används inte längre – rader väljs per undermapp
 
         for (const [dir, items] of groups.entries()) {
           // Begränsa till urval från torrkörningen om sådant finns
@@ -809,7 +850,7 @@
             });
             const ex = pre.existing || { feetdata:false, report:false, modelL:false, modelR:false, images:{arch:0,foot3d:0,pronator:0}, sides:{ archL:false,archR:false,foot3dL:false,foot3dR:false } };
             const det = pre.missingDetailed || {};
-            const needFeet = (!!det.feetLeft || !!det.feetRight) && lines.length > csvIndex;
+            const needFeet = (!!det.feetLeft || !!det.feetRight);
             const needReport = !!(det.report ?? pre.missing?.report);
             const needModelL = !!(det.modelL ?? pre.missing?.modelL);
             const needModelR = !!(det.modelR ?? pre.missing?.modelR);
@@ -830,27 +871,29 @@
 
             // CSV-import av feetdata om saknas
             if (needFeet) {
-              const l1 = lines[csvIndex] || '';
-              const l2 = lines[csvIndex + 1] || '';
+              const match = findCsvRowsForPatient(table.rows, user, phone, scanTime);
+              const l1 = match.leftRaw || '';
+              const l2 = match.rightRaw || '';
               const csvPayload = [l1, l2].filter(Boolean).join('\n');
               if (csvPayload) {
                 try {
                   await postJson(`${baseUrl}/api/scanners/upload-manual-file`, { transmissionId: tx, csvText: csvPayload });
-                  logLine(`[${dirName}] Importerade feetdata via CSV.`);
+                  const lm = match.leftMatch?.obj?.ScanTime || match.leftMatch?.obj?.scanTime || '';
+                  const rm = match.rightMatch?.obj?.ScanTime || match.rightMatch?.obj?.scanTime || '';
+                  logLine(`[${dirName}] Importerade feetdata via CSV (match): L="${lm}" R="${rm}".`);
                   // Skapa och ladda upp scanData.json (3DOE‑kompatibel)
                   const scanJson = buildScanDataFromLines(l1, l2);
                   if (scanJson) {
                     try {
                       const b64 = stringToBase64Utf8(scanJson);
                       await uploadViaSigned(baseUrl, sid, tx, 'scanData.json', 'application/json', b64);
-                      logLine(`[${dirName}] Laddade upp scanData.json.`);
+                      logLine(`[${dirName}] Laddade upp scanData.json (byggd från matchade CSV‑rader).`);
                     } catch (e) {
                       logLine(`[${dirName}] Kunde inte ladda upp scanData.json: ${e?.message || e}`);
                     }
                   } else {
                     logLine(`[${dirName}] Kunde inte bygga scanData.json från CSV.`);
                   }
-                  csvIndex += (l2 ? 2 : 1);
                 } catch (e) {
                   logLine(`[${dirName}] CSV‑import misslyckades: ${e?.message || e}`);
                 }
@@ -1017,30 +1060,29 @@
 
               // CSV-import av feetdata om saknas
               if (needFeet) {
-                const l1 = filteredLines[csvIndex] || '';
-                const l2 = filteredLines[csvIndex + 1] || '';
+                const match = findCsvRowsForPatient(filteredRows, user, phone, scanTime);
+                const l1 = match.leftRaw || '';
+                const l2 = match.rightRaw || '';
                 const csvPayload = [l1, l2].filter(Boolean).join('\n');
                 if (csvPayload) {
                   try {
                     await postJson(`${baseUrl}/api/scanners/upload-manual-file`, { transmissionId: tx, csvText: csvPayload });
-                    logLine(`[${dirName}] Importerade feetdata via CSV.`);
+                    const lm = match.leftMatch?.obj?.ScanTime || match.leftMatch?.obj?.scanTime || '';
+                    const rm = match.rightMatch?.obj?.ScanTime || match.rightMatch?.obj?.scanTime || '';
+                    logLine(`[${dirName}] Importerade feetdata via CSV (match): L="${lm}" R="${rm}".`);
                     // Skapa och ladda upp scanData.json
                     const scanJson = buildScanDataFromLines(l1, l2);
                     if (scanJson) {
                       try {
                         const b64 = stringToBase64Utf8(scanJson);
-                        await postJson(`${baseUrl}/api/scanners/upload-manual-file`, {
-                          transmissionId: tx, scannerId: sid, filename: 'scanData.json', contentType: 'application/json',
-                          dataBase64: `data:application/json;base64,${b64}`
-                        });
-                        logLine(`[${dirName}] Laddade upp scanData.json.`);
+                        await postJson(`${baseUrl}/api/scanners/upload-manual-file`, { transmissionId: tx, scannerId: sid, filename: 'scanData.json', contentType: 'application/json', dataBase64: `data:application/json;base64,${b64}` });
+                        logLine(`[${dirName}] Laddade upp scanData.json (byggd från matchade CSV‑rader).`);
                       } catch (e) {
                         logLine(`[${dirName}] Kunde inte ladda upp scanData.json: ${e?.message || e}`);
                       }
                     } else {
                       logLine(`[${dirName}] Kunde inte bygga scanData.json från CSV.`);
                     }
-                    csvIndex += (l2 ? 2 : 1);
                   } catch (e) {
                     logLine(`[${dirName}] CSV‑import misslyckades: ${e?.message || e}`);
                   }

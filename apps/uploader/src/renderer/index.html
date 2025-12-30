@@ -659,15 +659,26 @@
           const hasNeutral = tokens.some(t => includesAny(t, ['genomsnittlig fot','genomsnittlig','average foot','average']));
           if (hasNeutral) { foot.heelAngle = '0.000000'; foot.PronatorType = 'NEUTRAL'; }
         }
-        // HalluxAngle
-        const hIdx = tokens.findIndex(t => includesAny(t, ['hallux']));
-        if (hIdx > 0) {
-          const hv = toNum(tokens[hIdx-1]); if (hv !== null) foot.halluxAngle = hv.toFixed(4);
+        // HalluxAngle – fler mönster och bakåt-sökning
+        const halluxSyns = ['hallux','storta','stortå','big toe','thumb']; // feetbase kan använda “thumb”
+        let hIdx = -1;
+        for (let i = 0; i < tokens.length; i++) {
+          if (halluxSyns.some(k => includesAny(tokens[i], [k]))) { hIdx = i; break; }
         }
+        if (hIdx > 0) {
+          // Sök upp till 3 positioner bakåt efter ett rimligt vinkelvärde (0–40)
+          for (let j = 1; j <= 3; j++) {
+            const hv = toNum(tokens[hIdx - j]);
+            if (hv !== null && Math.abs(hv) <= 60) { foot.halluxAngle = hv.toFixed(4); break; }
+          }
+        }
+        // Fallback: förekomst av valgus/varus nära vinkelvärde
         if (!foot.halluxAngle) {
-          const hvTypeIdx = tokens.findIndex(t => includesAny(t, ['valgus','varus']));
-          if (hvTypeIdx > 0) {
-            const pv = toNum(tokens[hvTypeIdx-1]); if (pv !== null) foot.halluxAngle = pv.toFixed(4);
+          for (let i = 0; i < tokens.length; i++) {
+            if (includesAny(tokens[i], ['valgus','varus'])) {
+              const pv = toNum(tokens[i - 1]);
+              if (pv !== null && Math.abs(pv) <= 60) { foot.halluxAngle = pv.toFixed(4); break; }
+            }
           }
         }
         return foot;
@@ -682,10 +693,13 @@
         if (hallux >= 25) HalluxType = 'SEVERE_HALLUX_VALGUS';
         else if (hallux >= 15) HalluxType = 'MODERATE_HALLUX_VALGUS';
         else if (hallux >= 10) HalluxType = 'MILD_HALLUX_VALGUS';
+        // Pronation – introducera neutral‑band
         let PronatorType = foot.PronatorType || '';
+        const heel = Number(foot.heelAngle || '0');
         if (!PronatorType) {
-          const heel = Number(foot.heelAngle || '0');
-          PronatorType = heel > 0 ? 'VALGUS' : heel < 0 ? 'VARUS' : 'NEUTRAL';
+          PronatorType = Math.abs(heel) < 1.5 ? 'NEUTRAL' : (heel > 0 ? 'VALGUS' : 'VARUS');
+        } else if (PronatorType !== 'NEUTRAL' && Math.abs(heel) < 1.5) {
+          PronatorType = 'NEUTRAL';
         }
         return { ArchType, HalluxType, PronatorType };
       }

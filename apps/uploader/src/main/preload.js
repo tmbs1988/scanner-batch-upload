@@ -80,6 +80,14 @@ contextBridge.exposeInMainWorld('uploader', {
   autoDone: () => { ipcRenderer.send('auto-done'); },
   onAutoRun: (cb) => { try { ipcRenderer.on('auto-run-once', cb); } catch {} },
   onUpdateLog: (cb) => { try { ipcRenderer.on('u-upd-log', (_e, m) => cb(m)); } catch {} },
+  pickCsv: async (defaultPath) => {
+    try {
+      const p = await ipcRenderer.invoke('pick-csv', defaultPath);
+      return p || null;
+    } catch {
+      return null;
+    }
+  },
 });
 
 

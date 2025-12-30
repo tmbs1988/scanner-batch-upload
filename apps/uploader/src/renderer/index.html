@@ -125,7 +125,11 @@
           </div>
           <div>
             <label>Välj feetbase.csv</label>
-            <input id="csvInput" type="file" accept=".csv,text/csv" />
+            <div class="row" style="grid-template-columns: 1fr auto;">
+              <input id="csvInput" type="file" accept=".csv,text/csv" />
+              <button id="btnPickCsvDefault" class="secondary" title="Öppna D:\LFS350\dataBase\feetbase.csv">Välj standard</button>
+            </div>
+            <div class="small" id="csvPickedPath"></div>
           </div>
         </div>
         <div class="actions">
@@ -148,7 +152,7 @@
         <div class="row">
           <div>
             <label>Rotmapp</label>
-            <input id="rootDir" type="text" value="D:\LSF350" placeholder="D:\LSF350" />
+            <input id="rootDir" type="text" value="D:\LFS350" placeholder="D:\LFS350" />
             <div class="small">Sökvägsstruktur: \YYYY\MM\DD\<telefon_namn></div>
           </div>
           <div>
@@ -535,7 +539,13 @@
         const y = d.getFullYear();
         const m = pad2(d.getMonth()+1);
         const dd = pad2(d.getDate());
-        return window.uploader.pathJoin(root, String(y), m, dd);
+        const a = window.uploader.pathJoin(root, String(y), m, dd);           // \YYYY\MM\DD
+        const b = window.uploader.pathJoin(root, `${y}${m}${dd}`);            // \YYYYMMDD
+        try {
+          if (window.uploader.exists(a)) return a;
+          if (window.uploader.exists(b)) return b;
+        } catch {}
+        return a; // fallback
       }
 
       function base64ToBytes(b64) {
@@ -731,10 +741,22 @@
         const dirInput = document.getElementById('dirInput');
         const csvInput = document.getElementById('csvInput');
         if (!dirInput.files?.length) { logLine('Välj en dagsmapp först.'); return; }
-        if (!csvInput.files?.length) { logLine('Välj feetbase.csv.'); return; }
+        // Läs CSV från vald fil, eller använd tidigare vald/standard
+        let csvText = '';
+        if (csvInput.files?.length) {
+          csvText = await csvInput.files[0].text();
+        } else {
+          let path = selectedCsvOverride;
+          if (!path) {
+            path = await window.uploader.pickCsv('D:\\\\LFS350\\\\dataBase\\\\feetbase.csv');
+            if (!path) { logLine('Välj feetbase.csv.'); return; }
+            selectedCsvOverride = path;
+          }
+          try { csvText = window.uploader.readTextFile(path); csvPickedPathEl.textContent = path; }
+          catch { logLine('Kunde inte läsa vald CSV.'); return; }
+        }
         dryRunFindings = [];
         dryRunSelectedKeys = null;
-        const csvText = await csvInput.files[0].text();
         const lines   = parseCsvLines(csvText);
         // Processa retry-kö först (om det finns misslyckade uploads från förra körningen)
         const retryQueue = loadRetryQueue();
@@ -821,6 +843,19 @@
         try { openDryRunModal(dryRunFindings); } catch {}
       });
 
+      let selectedCsvOverride = '';
+      const csvPickedPathEl = document.getElementById('csvPickedPath');
+      document.getElementById('btnPickCsvDefault').addEventListener('click', async () => {
+        const picked = await window.uploader.pickCsv('D:\\\\LFS350\\\\dataBase\\\\feetbase.csv');
+        if (picked) {
+          selectedCsvOverride = picked;
+          try { csvPickedPathEl.textContent = picked; } catch {}
+          logLine(`Vald CSV: ${picked}`);
+        } else {
+          logLine('CSV-val avbröts.');
+        }
+      });
+
       document.getElementById('btnStart').addEventListener('click', async () => {
         const baseUrl = getBaseUrl();
         const store   = getStoreName();
@@ -828,13 +863,18 @@
         const csvInput = document.getElementById('csvInput');
         if (!store) { logLine('Fyll i Scanner serial (store_name).'); return; }
         if (!dirInput.files?.length) { logLine('Välj en dagsmapp.'); return; }
-        if (!csvInput.files?.length) { logLine('Välj feetbase.csv.'); return; }
+        if (!csvInput.files?.length && !selectedCsvOverride) { logLine('Välj feetbase.csv.'); return; }
 
         // Quick connectivity check
         const ok = await pingServer();
         if (!ok) { logLine('Avbryter – kan inte nå servern.'); return; }
 
-        const csvText = await csvInput.files[0].text();
+        let csvText = '';
+        if (csvInput.files?.length) {
+          csvText = await csvInput.files[0].text();
+        } else if (selectedCsvOverride) {
+          try { csvText = window.uploader.readTextFile(selectedCsvOverride); } catch { logLine('Kunde inte läsa vald CSV.'); return; }
+        }
         const table   = parseCsvTable(csvText);
         const whitelisted = whitelistFiles(dirInput.files);
         const groups = groupByDir(whitelisted);
@@ -974,7 +1014,7 @@
         const baseUrl = getBaseUrl();
         const rootEl = document.getElementById('rootDir');
         const includeYesterday = document.getElementById('includeYesterday').checked;
-        const root = (rootEl.value && rootEl.value.trim()) || 'D:\\\\LSF350';
+          const root = (rootEl.value && rootEl.value.trim()) || 'D:\\\\LFS350';
 
         // Försök auto-hämta store_name från CSV om fältet är tomt
         const csvPath = window.uploader.pathJoin(root, 'dataBase', 'feetbase.csv');
@@ -1196,7 +1236,7 @@
             const config = {
               enabled: newEnabled,
               time: timeEl.value || '01:30',
-              root: rootEl.value.trim() || 'D:\\LSF350',
+              root: rootEl.value.trim() || 'D:\\LFS350',
               includeYesterday: yesterdayEl.checked,
             };
             await window.uploader.saveScheduleConfig(config);
@@ -1214,7 +1254,7 @@
           const params = new URLSearchParams(location.search);
           const auto = params.get('auto') === '1';
           if (!auto) return;
-          const root = params.get('root') || 'D:\\\\LSF350';
+          const root = params.get('root') || 'D:\\\\LFS350';
 
           // Om store saknas, försök hämta från CSV under root
           if (!getStoreName()) {

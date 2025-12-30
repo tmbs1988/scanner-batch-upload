@@ -1,8 +1,18 @@
+## 0.1.42 (2025-12-30)
+- Fix: standardvägar och escaping uppdaterade till `D:\LFS350\...`.
+- Auto-läge: söker dagmappar i både `\YYYY\MM\DD` och `\YYYYMMDD` under `D:\LFS350`.
+- UI: smalare initialfönster (ej maximerat), anpassat till innehållets centrumbredd. Minbredd sänkt.
+- CSV: “Välj standard” öppnar `D:\LFS350\dataBase\feetbase.csv` direkt via systemets filväljare.
+- Övrigt: mindre logg- och robusthetsförbättringar.
 ## 0.1.41 (2025-12-30)
 - Parser‑justeringar för paritet med 3DOE:
   - Robust hallux‑vinkeluttag (fångar “hallux/stortå/big toe/thumb” och backar 1–3 kolumner; fallback via närmaste “valgus/varus”).
   - Neutral‑band för häl: |heelAngle| < 1.5° ⇒ `NEUTRAL` (etikett). Ingen ny beräkning – endast tolkning av CSV‑värden.
 - Oförändrat flöde: `scanData.json` byggs från matchade L/R‑rader och laddas upp före finalize; samma rader skickas som `csvText` till backend.
+- QoL:
+  - Auto‑läge stöder nu både rot\\YYYY\\MM\\DD och rot\\YYYYMMDD (väljer existerande).
+  - “Välj standard”‑knapp för CSV som öppnar `D:\LSF350\dataBase\feetbase.csv` direkt (via inbyggd filväljare).
+  - Fönster startar inte längre maximerat och kan göras smalare (minbredd 880px).
 
 ## 0.1.40 (2025-12-30)
 - Deterministisk CSV‑matchning per skanning: i stället för sekventiell parning väljs nu två rader (L/R) från `feetbase.csv` per undermapp baserat på:

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, protocol, ipcMain, Tray, Menu, nativeImage } = require('electron');
+const { app, BrowserWindow, protocol, ipcMain, Tray, Menu, nativeImage, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { autoUpdater } = require('electron-updater');
@@ -19,7 +19,7 @@ function loadWindowState() {
       return { ...st, _hasState: true };
     }
   } catch {}
-  return { width: 1280, height: 900, maximized: false, _hasState: false };
+  return { width: 1060, height: 820, maximized: false, _hasState: false };
 }
 
 function saveWindowState(win) {
@@ -48,12 +48,12 @@ function getArgValue(flag, fallback) {
 function createWindow() {
   const state = loadWindowState();
   const win = new BrowserWindow({
-    width: state.width || 1400,
-    height: state.height || 1000,
+    width: state.width || 1060,
+    height: state.height || 820,
     x: state.x,
     y: state.y,
-    minWidth: 1024,
-    minHeight: 800,
+    minWidth: 820,
+    minHeight: 700,
     show: false,
     webPreferences: {
       sandbox: false,
@@ -105,9 +105,6 @@ function createWindow() {
     }
     try {
       if (state._hasState && state.maximized) {
-        win.maximize();
-      } else if (!state._hasState) {
-        // Första körningen: öppna maximerat för att undvika "för kort" fönster
         win.maximize();
       }
     } catch {}
@@ -359,5 +356,21 @@ ipcMain.handle('load-schedule-config', async () => {
     }
   } catch {}
   return null;
+});
+
+// IPC: filval för CSV med defaultPath
+ipcMain.handle('pick-csv', async (_e, defaultPath) => {
+  try {
+    const res = await dialog.showOpenDialog({
+      title: 'Välj feetbase.csv',
+      defaultPath: defaultPath || 'D:\\LFS350\\dataBase\\feetbase.csv',
+      filters: [{ name: 'CSV', extensions: ['csv'] }],
+      properties: ['openFile']
+    });
+    if (res.canceled || !res.filePaths?.length) return null;
+    return res.filePaths[0];
+  } catch {
+    return null;
+  }
 });
 

@@ -1,3 +1,9 @@
+## 0.1.41 (2025-12-30)
+- Parser‑justeringar för paritet med 3DOE:
+  - Robust hallux‑vinkeluttag (fångar “hallux/stortå/big toe/thumb” och backar 1–3 kolumner; fallback via närmaste “valgus/varus”).
+  - Neutral‑band för häl: |heelAngle| < 1.5° ⇒ `NEUTRAL` (etikett). Ingen ny beräkning – endast tolkning av CSV‑värden.
+- Oförändrat flöde: `scanData.json` byggs från matchade L/R‑rader och laddas upp före finalize; samma rader skickas som `csvText` till backend.
+
 ## 0.1.40 (2025-12-30)
 - Deterministisk CSV‑matchning per skanning: i stället för sekventiell parning väljs nu två rader (L/R) från `feetbase.csv` per undermapp baserat på:
   - exakt `phone` (om tillgängligt),

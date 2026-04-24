@@ -10,6 +10,12 @@ let mainWin = null;
 let winStatePath = null;
 let scheduleTimer = null;
 
+function normalizeLegacyScannerPath(value) {
+  return String(value || '')
+    .replace(/[\\/]+LFS350(?=[\\/]|$)/gi, '\\LSF350')
+    .replace(/^[A-Za-z]:\\LFS350(?=$)/i, (m) => m.replace(/LFS350/i, 'LSF350'));
+}
+
 function loadWindowState() {
   try {
     winStatePath = path.join(app.getPath('userData'), 'window-state.json');
@@ -301,6 +307,13 @@ function startInternalScheduler() {
   try {
     if (fs.existsSync(configPath)) {
       config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      if (config && typeof config.root === 'string') {
+        const normalizedRoot = normalizeLegacyScannerPath(config.root);
+        if (normalizedRoot !== config.root) {
+          config.root = normalizedRoot;
+          fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8');
+        }
+      }
       sendLog(`[Scheduler] Config loaded: enabled=${config.enabled}, time=${config.time}, root=${config.root}`);
     } else {
       sendLog(`[Scheduler] No config file found`);
@@ -338,7 +351,11 @@ function startInternalScheduler() {
 ipcMain.handle('save-schedule-config', async (_e, cfg) => {
   try {
     const file = path.join(app.getPath('userData'), 'schedule-config.json');
-    fs.writeFileSync(file, JSON.stringify(cfg, null, 2), 'utf8');
+    const normalized = {
+      ...cfg,
+      root: normalizeLegacyScannerPath(cfg?.root || 'D:\\LSF350'),
+    };
+    fs.writeFileSync(file, JSON.stringify(normalized, null, 2), 'utf8');
     // Restart scheduler
     if (scheduleTimer) clearInterval(scheduleTimer);
     startInternalScheduler();
@@ -352,7 +369,15 @@ ipcMain.handle('load-schedule-config', async () => {
   try {
     const file = path.join(app.getPath('userData'), 'schedule-config.json');
     if (fs.existsSync(file)) {
-      return JSON.parse(fs.readFileSync(file, 'utf8'));
+      const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+      if (parsed && typeof parsed.root === 'string') {
+        const normalizedRoot = normalizeLegacyScannerPath(parsed.root);
+        if (normalizedRoot !== parsed.root) {
+          parsed.root = normalizedRoot;
+          fs.writeFileSync(file, JSON.stringify(parsed, null, 2), 'utf8');
+        }
+      }
+      return parsed;
     }
   } catch {}
   return null;

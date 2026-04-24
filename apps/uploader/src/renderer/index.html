@@ -292,8 +292,13 @@
         if (lower === 'sweden010002') return '3dfott010002';
         return raw;
       }
+      function normalizeLegacyScannerPath(value) {
+        return String(value || '')
+          .replace(/[\\/]+LFS350(?=[\\/]|$)/gi, '\\LSF350')
+          .replace(/^[A-Za-z]:\\LFS350(?=$)/i, (m) => m.replace(/LFS350/i, 'LSF350'));
+      }
       function normalizeFsPath(value) {
-        return String(value || '').trim().replace(/^"+|"+$/g, '').replace(/\//g, '\\');
+        return normalizeLegacyScannerPath(String(value || '').trim().replace(/^"+|"+$/g, '').replace(/\//g, '\\'));
       }
       function pathLeafName(value) {
         const normalized = normalizeFsPath(value).replace(/[\\]+$/g, '');
@@ -538,9 +543,14 @@
       try { localStorage.setItem(BASE_KEY, baseUrlEl.value); } catch {}
       try {
         rootDirEl.value = normalizeFsPath(localStorage.getItem(ROOT_DIR_KEY) || rootDirEl.value || DEFAULT_ROOT_DIR) || DEFAULT_ROOT_DIR;
+        localStorage.setItem(ROOT_DIR_KEY, rootDirEl.value);
       } catch {
         rootDirEl.value = DEFAULT_ROOT_DIR;
       }
+      try {
+        const persistedCsvPath = localStorage.getItem(CSV_PATH_KEY) || '';
+        if (persistedCsvPath) localStorage.setItem(CSV_PATH_KEY, normalizeFsPath(persistedCsvPath));
+      } catch {}
       rootDirEl.addEventListener('change', () => {
         const normalized = getRootDirValue();
         rootDirEl.value = normalized;

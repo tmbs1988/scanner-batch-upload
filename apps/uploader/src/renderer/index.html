@@ -267,11 +267,22 @@
       } catch {
         baseUrlEl.value = 'https://app.3dfotteknik.se';
       }
-      storeEl.value = localStorage.getItem(STORE_KEY) || '';
+      function normalizeStoreName(value) {
+        const raw = String(value || '').trim();
+        if (!raw) return '';
+        const lower = raw.toLowerCase();
+        if (lower === 'sweden010002') return '3dfott010002';
+        return raw;
+      }
+      storeEl.value = normalizeStoreName(localStorage.getItem(STORE_KEY) || '');
       function getBaseUrl()  { return baseUrlEl.value.trim() || 'https://app.3dfotteknik.se'; }
-      function getStoreName(){ return storeEl.value.trim(); }
+      function getStoreName(){ return normalizeStoreName(storeEl.value); }
       baseUrlEl.addEventListener('change', () => { localStorage.setItem(BASE_KEY, getBaseUrl()); pingServer().catch(() => {}); });
-      storeEl.addEventListener('change', () => { localStorage.setItem(STORE_KEY, getStoreName()); });
+      storeEl.addEventListener('change', () => {
+        const normalized = getStoreName();
+        storeEl.value = normalized;
+        localStorage.setItem(STORE_KEY, normalized);
+      });
       // If packaged (release), hide Base URL and force production domain
       // Visa alltid Base URL (även i release) så vi ser värdet och kan ändra vid behov
       baseUrlEl.value = baseUrlEl.value || 'https://app.3dfotteknik.se';
@@ -800,9 +811,10 @@
         const currentStore = getStoreName();
         const guessed = extractStoreNameFromCsv(csvText);
         if (guessed) {
-          storeEl.value = guessed;
-          localStorage.setItem(STORE_KEY, guessed);
-          logLine(`Hittade store_name i CSV: ${guessed}`);
+          const normalized = normalizeStoreName(guessed);
+          storeEl.value = normalized;
+          localStorage.setItem(STORE_KEY, normalized);
+          logLine(`Hittade store_name i CSV: ${guessed}${normalized !== guessed ? ` -> använder ${normalized}` : ''}`);
         } else {
           logLine('Hittade inget store_name i CSV – kontrollera headern och att rad 2 innehåller värdet.');
         }
@@ -1035,9 +1047,10 @@
           const guessed = extractStoreNameFromCsv(csvText);
           if (guessed) {
             try {
-              document.getElementById('storeName').value = guessed;
-              localStorage.setItem('cfg_storeName', guessed);
-              logLine(`Auto: store_name från CSV: ${guessed}`);
+              const normalized = normalizeStoreName(guessed);
+              document.getElementById('storeName').value = normalized;
+              localStorage.setItem('cfg_storeName', normalized);
+              logLine(`Auto: store_name från CSV: ${guessed}${normalized !== guessed ? ` -> använder ${normalized}` : ''}`);
             } catch {}
           }
         }
@@ -1272,9 +1285,10 @@
                 const csvText = window.uploader.readTextFile(csvPath);
                 const guessed = extractStoreNameFromCsv(csvText);
                 if (guessed) {
-                  (document.getElementById('storeName')).value = guessed;
-                  localStorage.setItem('cfg_storeName', guessed);
-                  logLine(`Auto: store_name från CSV: ${guessed}`);
+                  const normalized = normalizeStoreName(guessed);
+                  (document.getElementById('storeName')).value = normalized;
+                  localStorage.setItem('cfg_storeName', normalized);
+                  logLine(`Auto: store_name från CSV: ${guessed}${normalized !== guessed ? ` -> använder ${normalized}` : ''}`);
                 }
               } catch {}
             }

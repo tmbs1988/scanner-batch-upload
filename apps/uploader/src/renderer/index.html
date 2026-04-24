@@ -828,6 +828,7 @@
         dryRunFindings = [];
         dryRunSelectedKeys = null;
         const lines   = parseCsvLines(csvText);
+        const table   = parseCsvTable(csvText);
         // Processa retry-kö först (om det finns misslyckade uploads från förra körningen)
         const retryQueue = loadRetryQueue();
         if (retryQueue.length > 0) {

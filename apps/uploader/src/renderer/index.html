@@ -758,6 +758,42 @@
         try { return JSON.stringify(obj); } catch { return null; }
       }
 
+      async function refreshFeetdataAndScanData({ baseUrl, scannerId, transmissionId, user, phone, scanTime, csvRows, dirName }) {
+        const match = findCsvRowsForPatient(csvRows, user, phone, scanTime);
+        const l1 = match.leftRaw || '';
+        const l2 = match.rightRaw || '';
+        const csvPayload = [l1, l2].filter(Boolean).join('\n');
+        if (!csvPayload) {
+          logLine(`[${dirName}] Ingen matchad CSV-rad för scanData-refresh.`);
+          return false;
+        }
+
+        try {
+          await postJson(`${baseUrl}/api/scanners/upload-manual-file`, { transmissionId, csvText: csvPayload });
+          const lm = match.leftMatch?.obj?.ScanTime || match.leftMatch?.obj?.scanTime || '';
+          const rm = match.rightMatch?.obj?.ScanTime || match.rightMatch?.obj?.scanTime || '';
+          logLine(`[${dirName}] Importerade feetdata via CSV (match): L="${lm}" R="${rm}".`);
+
+          const scanJson = buildScanDataFromLines(l1, l2);
+          if (scanJson) {
+            try {
+              const b64 = stringToBase64Utf8(scanJson);
+              await uploadViaSigned(baseUrl, scannerId, transmissionId, 'scanData.json', 'application/json', b64);
+              logLine(`[${dirName}] Laddade upp scanData.json (byggd från matchade CSV-rader).`);
+            } catch (e) {
+              logLine(`[${dirName}] Kunde inte ladda upp scanData.json: ${e?.message || e}`);
+            }
+          } else {
+            logLine(`[${dirName}] Kunde inte bygga scanData.json från CSV.`);
+          }
+
+          return true;
+        } catch (e) {
+          logLine(`[${dirName}] CSV-import misslyckades: ${e?.message || e}`);
+          return false;
+        }
+      }
+
       document.getElementById('btnDryRun').addEventListener('click', async () => {
         const dirInput = document.getElementById('dirInput');
         const csvInput = document.getElementById('csvInput');
@@ -943,38 +979,17 @@
             if (!tx || !sid) { logLine(`[${dirName}] Ingen befintlig transmission – hoppar över.`); continue; }
             logLine(`Transmission (befintlig): ${tx} [${dirName}]`);
 
-            // CSV-import av feetdata om saknas
-            if (needFeet) {
-              const match = findCsvRowsForPatient(table.rows, user, phone, scanTime);
-              const l1 = match.leftRaw || '';
-              const l2 = match.rightRaw || '';
-              const csvPayload = [l1, l2].filter(Boolean).join('\n');
-              if (csvPayload) {
-                try {
-                  await postJson(`${baseUrl}/api/scanners/upload-manual-file`, { transmissionId: tx, csvText: csvPayload });
-                  const lm = match.leftMatch?.obj?.ScanTime || match.leftMatch?.obj?.scanTime || '';
-                  const rm = match.rightMatch?.obj?.ScanTime || match.rightMatch?.obj?.scanTime || '';
-                  logLine(`[${dirName}] Importerade feetdata via CSV (match): L="${lm}" R="${rm}".`);
-                  // Skapa och ladda upp scanData.json (3DOE‑kompatibel)
-                  const scanJson = buildScanDataFromLines(l1, l2);
-                  if (scanJson) {
-                    try {
-                      const b64 = stringToBase64Utf8(scanJson);
-                      await uploadViaSigned(baseUrl, sid, tx, 'scanData.json', 'application/json', b64);
-                      logLine(`[${dirName}] Laddade upp scanData.json (byggd från matchade CSV‑rader).`);
-                    } catch (e) {
-                      logLine(`[${dirName}] Kunde inte ladda upp scanData.json: ${e?.message || e}`);
-                    }
-                  } else {
-                    logLine(`[${dirName}] Kunde inte bygga scanData.json från CSV.`);
-                  }
-                } catch (e) {
-                  logLine(`[${dirName}] CSV‑import misslyckades: ${e?.message || e}`);
-                }
-              } else {
-                logLine(`[${dirName}] Ingen CSV‑rad kvar att importera (feetdata saknas).`);
-              }
-            }
+            // Säkerställ att indexdata/scanData följer med varje vald transmission
+            await refreshFeetdataAndScanData({
+              baseUrl,
+              scannerId: sid,
+              transmissionId: tx,
+              user,
+              phone,
+              scanTime,
+              csvRows: table.rows,
+              dirName,
+            });
 
             // UPLOAD filer
             const isLeft = (n) => /(^|[_-])l(\.|$)|(^|[_-])left(\b|_)/i.test(String(n||'').toLowerCase());
@@ -1133,38 +1148,17 @@
               if (!tx || !sid) { logLine(`[${dirName}] Ingen befintlig transmission – hoppar över.`); continue; }
               logLine(`Transmission (befintlig): ${tx} [${dirName}]`);
 
-              // CSV-import av feetdata om saknas
-              if (needFeet) {
-                const match = findCsvRowsForPatient(filteredRows, user, phone, scanTime);
-                const l1 = match.leftRaw || '';
-                const l2 = match.rightRaw || '';
-                const csvPayload = [l1, l2].filter(Boolean).join('\n');
-                if (csvPayload) {
-                  try {
-                    await postJson(`${baseUrl}/api/scanners/upload-manual-file`, { transmissionId: tx, csvText: csvPayload });
-                    const lm = match.leftMatch?.obj?.ScanTime || match.leftMatch?.obj?.scanTime || '';
-                    const rm = match.rightMatch?.obj?.ScanTime || match.rightMatch?.obj?.scanTime || '';
-                    logLine(`[${dirName}] Importerade feetdata via CSV (match): L="${lm}" R="${rm}".`);
-                    // Skapa och ladda upp scanData.json
-                    const scanJson = buildScanDataFromLines(l1, l2);
-                    if (scanJson) {
-                      try {
-                        const b64 = stringToBase64Utf8(scanJson);
-                        await postJson(`${baseUrl}/api/scanners/upload-manual-file`, { transmissionId: tx, scannerId: sid, filename: 'scanData.json', contentType: 'application/json', dataBase64: `data:application/json;base64,${b64}` });
-                        logLine(`[${dirName}] Laddade upp scanData.json (byggd från matchade CSV‑rader).`);
-                      } catch (e) {
-                        logLine(`[${dirName}] Kunde inte ladda upp scanData.json: ${e?.message || e}`);
-                      }
-                    } else {
-                      logLine(`[${dirName}] Kunde inte bygga scanData.json från CSV.`);
-                    }
-                  } catch (e) {
-                    logLine(`[${dirName}] CSV‑import misslyckades: ${e?.message || e}`);
-                  }
-                } else {
-                  logLine(`[${dirName}] Ingen CSV‑rad kvar att importera (feetdata saknas).`);
-                }
-              }
+              // Säkerställ att indexdata/scanData följer med varje vald transmission
+              await refreshFeetdataAndScanData({
+                baseUrl,
+                scannerId: sid,
+                transmissionId: tx,
+                user,
+                phone,
+                scanTime,
+                csvRows: filteredRows,
+                dirName,
+              });
 
               // UPLOAD
               const isLeft = (n) => /(^|[_-])l(\.|$)|(^|[_-])left(\b|_)/i.test(String(n||'').toLowerCase());

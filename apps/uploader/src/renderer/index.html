@@ -158,7 +158,7 @@
           <div>
             <label>Rotmapp</label>
             <div class="row" style="grid-template-columns: 1fr auto;">
-              <input id="rootDir" type="text" value="D:\LFS350" placeholder="D:\LFS350" />
+              <input id="rootDir" type="text" value="D:\LSF350" placeholder="D:\LSF350" />
               <button id="btnPickRootDir" class="secondary">Bläddra...</button>
             </div>
             <div class="small">Sökvägsstruktur: \YYYY\MM\DD\<telefon_namn></div>
@@ -264,7 +264,7 @@
       const STORE_KEY = 'cfg_storeName';
       const ROOT_DIR_KEY = 'cfg_rootDir';
       const CSV_PATH_KEY = 'cfg_csvPath';
-      const DEFAULT_ROOT_DIR = 'D:\\LFS350';
+      const DEFAULT_ROOT_DIR = 'D:\\LSF350';
       const baseUrlEl = document.getElementById('baseUrl');
       const storeEl = document.getElementById('storeName');
       const baseUrlWrap = document.getElementById('baseUrlWrap');
@@ -346,8 +346,8 @@
           add(window.uploader.pathJoin(base, 'database', 'feetbase.csv'));
           add(window.uploader.pathJoin(base, 'feetbase.csv'));
         }
-        add('D:\\LFS350\\dataBase\\feetbase.csv');
-        add('D:\\LFS350\\database\\feetbase.csv');
+        add('D:\\LSF350\\dataBase\\feetbase.csv');
+        add('D:\\LSF350\\database\\feetbase.csv');
         add('D:\\dataBase\\feetbase.csv');
         add('D:\\database\\feetbase.csv');
         return candidates;
@@ -1214,7 +1214,7 @@
       });
 
       document.getElementById('btnPickCsvDefault').addEventListener('click', async () => {
-        const picked = await window.uploader.pickCsv(resolveCsvPath(getRootDirValue()) || 'D:\\\\LFS350\\\\dataBase\\\\feetbase.csv');
+        const picked = await window.uploader.pickCsv(resolveCsvPath(getRootDirValue()) || 'D:\\\\LSF350\\\\dataBase\\\\feetbase.csv');
         if (picked) {
           setSelectedCsvPath(picked, { log: true });
           try { csvInputEl.value = ''; } catch {}
@@ -1575,7 +1575,7 @@
             const config = {
               enabled: newEnabled,
               time: timeEl.value || '01:30',
-              root: rootEl.value.trim() || 'D:\\LFS350',
+              root: rootEl.value.trim() || 'D:\\LSF350',
               includeYesterday: yesterdayEl.checked,
             };
             await window.uploader.saveScheduleConfig(config);

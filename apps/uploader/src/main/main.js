@@ -363,7 +363,7 @@ ipcMain.handle('pick-csv', async (_e, defaultPath) => {
   try {
     const res = await dialog.showOpenDialog({
       title: 'Välj feetbase.csv',
-      defaultPath: defaultPath || 'D:\\LFS350\\dataBase\\feetbase.csv',
+      defaultPath: defaultPath || 'D:\\LSF350\\dataBase\\feetbase.csv',
       filters: [{ name: 'CSV', extensions: ['csv'] }],
       properties: ['openFile']
     });

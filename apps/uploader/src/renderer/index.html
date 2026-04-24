@@ -423,6 +423,28 @@
         const rightRaw = right?.row?.raw || '';
         return { leftRaw, rightRaw, leftMatch: left?.row, rightMatch: right?.row };
       }
+      function pickBestMatchedScanTime(match, fallbackIso) {
+        const fallbackDate = new Date(fallbackIso || '');
+        const fallbackMs = fallbackDate.getTime();
+        const candidates = [match?.leftMatch?.scanTime, match?.rightMatch?.scanTime]
+          .filter(d => d instanceof Date && !isNaN(d.getTime()));
+        if (candidates.length === 0) return { scanTime: fallbackIso, source: 'folder' };
+        if (candidates.length === 1 || !isFinite(fallbackMs)) {
+          return { scanTime: candidates[0].toISOString(), source: 'csv' };
+        }
+        candidates.sort((a, b) => Math.abs(a.getTime() - fallbackMs) - Math.abs(b.getTime() - fallbackMs));
+        return { scanTime: candidates[0].toISOString(), source: 'csv' };
+      }
+      function resolveScanContext(csvRows, user, phone, folderScanTimeIso) {
+        const refreshInfo = getRefreshPayload(csvRows, user, phone, folderScanTimeIso);
+        const chosen = pickBestMatchedScanTime(refreshInfo.match, folderScanTimeIso);
+        return {
+          refreshInfo,
+          scanTime: chosen.scanTime || folderScanTimeIso,
+          scanTimeSource: chosen.source,
+          folderScanTime: folderScanTimeIso,
+        };
+      }
       function extractStoreNameFromCsv(text) {
         const rows = parseCsvLines(text).filter(Boolean);
         const splitRow = (row) => row.split(/[;,:\t]+/).map(s => s.trim());
@@ -879,7 +901,12 @@
           try {
             const dirName = (dir.split('/').pop() || '').trim();
             const { phone, user } = parseFolderName(dirName);
-            const scanTime = new Date(Math.max(...items.map(i => i.file.lastModified))).toISOString();
+            const folderScanTime = new Date(Math.max(...items.map(i => i.file.lastModified))).toISOString();
+            const scanContext = resolveScanContext(table.rows, user, phone, folderScanTime);
+            const scanTime = scanContext.scanTime;
+            if (scanContext.scanTimeSource === 'csv' && scanTime !== folderScanTime) {
+              logLine(`[${dir}] använder CSV ScanTime i preflight: ${scanTime} (lokal filtidsfallback: ${folderScanTime})`);
+            }
             const pre = await postJson(`${baseUrl}/api/scanners/upload-manual-file`, { checkOnly: true, store_name: store, user_name: user, phone, scanTime });
             const miss = pre.missing || {};
             if (pre.transmissionId) {
@@ -888,7 +915,7 @@
               logLine(`[${dir}] match: tx=${pre.transmissionId}, mode=${matched}, phoneMatch=${mf.phoneMatched?'ja':'nej'}, nameMatch=${mf.userMatched?'ja':'nej'}`);
             }
             const det = pre.missingDetailed || {};
-            const refreshInfo = getRefreshPayload(table.rows, user, phone, scanTime);
+            const refreshInfo = scanContext.refreshInfo;
             const needFeet = needsFeetRefresh(det);
             const shouldRefreshScanData = needFeet && refreshInfo.canRefresh;
             const lack = describeMissing(pre);
@@ -956,8 +983,10 @@
           // Begränsa till urval från torrkörningen om sådant finns
           if (dryRunSelectedKeys && dryRunSelectedKeys.size > 0) {
             const dirName = (dir.split('/').pop() || '').trim();
-            const { phone } = parseFolderName(dirName);
-            const scanTimeKey = new Date(Math.max(...items.map(i => i.file.lastModified))).toISOString();
+            const { phone, user } = parseFolderName(dirName);
+            const folderScanTimeKey = new Date(Math.max(...items.map(i => i.file.lastModified))).toISOString();
+            const scanContextKey = resolveScanContext(table.rows, user, phone, folderScanTimeKey);
+            const scanTimeKey = scanContextKey.scanTime;
             const key = `${dir}|${phone}|${scanTimeKey}`;
             if (!dryRunSelectedKeys.has(key)) {
               logLine(`Hoppar över (ej vald i torrkörning): ${dir}`);
@@ -968,14 +997,19 @@
             logLine(`Bearbetar ${dir}…`);
             const dirName = (dir.split('/').pop() || '').trim();
             const { phone, user } = parseFolderName(dirName);
-            const scanTime = new Date(Math.max(...items.map(i => i.file.lastModified))).toISOString();
+            const folderScanTime = new Date(Math.max(...items.map(i => i.file.lastModified))).toISOString();
+            const scanContext = resolveScanContext(table.rows, user, phone, folderScanTime);
+            const scanTime = scanContext.scanTime;
+            if (scanContext.scanTimeSource === 'csv' && scanTime !== folderScanTime) {
+              logLine(`[${dirName}] använder CSV ScanTime i preflight: ${scanTime} (lokal filtidsfallback: ${folderScanTime})`);
+            }
 
             // Preflight: checkOnly
             const pre = await postJson(`${baseUrl}/api/scanners/upload-manual-file`, {
               checkOnly: true, store_name: store, user_name: user, phone, scanTime
             });
             const det = pre.missingDetailed || {};
-            const refreshInfo = getRefreshPayload(table.rows, user, phone, scanTime);
+            const refreshInfo = scanContext.refreshInfo;
             const needFeet = needsFeetRefresh(det);
             const shouldRefreshScanData = needFeet && refreshInfo.canRefresh;
             const needReport = !!(det.report ?? pre.missing?.report);
@@ -1138,7 +1172,12 @@
               const parts   = dirName.split(' ');
               const phone   = (parts[0] && /[0-9+]/.test(parts[0][0])) ? parts[0] : '';
               const user    = phone ? parts.slice(1).join(' ') : dirName;
-              const scanTime = new Date(Math.max(...items.map(i => i.mtimeMs))).toISOString();
+              const folderScanTime = new Date(Math.max(...items.map(i => i.mtimeMs))).toISOString();
+              const scanContext = resolveScanContext(filteredRows, user, phone, folderScanTime);
+              const scanTime = scanContext.scanTime;
+              if (scanContext.scanTimeSource === 'csv' && scanTime !== folderScanTime) {
+                logLine(`[${dirName}] använder CSV ScanTime i preflight: ${scanTime} (lokal filtidsfallback: ${folderScanTime})`);
+              }
 
               // Preflight
               const pre = await postJson(`${baseUrl}/api/scanners/upload-manual-file`, {
@@ -1146,7 +1185,7 @@
               });
               const miss = pre.missing || {};
               const det = pre.missingDetailed || {};
-              const refreshInfo = getRefreshPayload(filteredRows, user, phone, scanTime);
+              const refreshInfo = scanContext.refreshInfo;
               const needFeet = needsFeetRefresh(det);
               const shouldRefreshScanData = needFeet && refreshInfo.canRefresh;
               const lack = describeMissing(pre);

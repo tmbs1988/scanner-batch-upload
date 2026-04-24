@@ -211,7 +211,6 @@
       
       // Retry queue management
       const RETRY_QUEUE_KEY = 'upload_retry_queue';
-      const REFRESH_STATE_KEY = 'scan_data_refresh_state';
       function loadRetryQueue() {
         try {
           const raw = localStorage.getItem(RETRY_QUEUE_KEY);
@@ -245,36 +244,6 @@
           queue = queue.filter(e => !(e.dir === entry.dir && e.phone === entry.phone && e.scanTime === entry.scanTime));
           localStorage.setItem(RETRY_QUEUE_KEY, JSON.stringify(queue));
         } catch {}
-      }
-      function loadRefreshState() {
-        try {
-          const raw = localStorage.getItem(REFRESH_STATE_KEY);
-          return raw ? JSON.parse(raw) : {};
-        } catch {
-          return {};
-        }
-      }
-      function saveRefreshState(state) {
-        try {
-          localStorage.setItem(REFRESH_STATE_KEY, JSON.stringify(state));
-        } catch {}
-      }
-      function markRefreshApplied(transmissionId, signature) {
-        if (!transmissionId || !signature) return;
-        const state = loadRefreshState();
-        state[transmissionId] = signature;
-        saveRefreshState(state);
-      }
-      function isRefreshApplied(transmissionId, signature) {
-        if (!transmissionId || !signature) return false;
-        const state = loadRefreshState();
-        return state[transmissionId] === signature;
-      }
-      function clearRefreshApplied(transmissionId) {
-        if (!transmissionId) return;
-        const state = loadRefreshState();
-        delete state[transmissionId];
-        saveRefreshState(state);
       }
       // Global felhookar så att dolda fel syns i loggen
       window.addEventListener('error', (e) => {
@@ -788,16 +757,6 @@
         }
         try { return JSON.stringify(obj); } catch { return null; }
       }
-      function simpleHash(input) {
-        const text = String(input || '');
-        let hash = 0;
-        for (let i = 0; i < text.length; i++) {
-          hash = ((hash << 5) - hash) + text.charCodeAt(i);
-          hash |= 0;
-        }
-        return String(hash);
-      }
-
       async function refreshFeetdataAndScanData({ baseUrl, scannerId, transmissionId, user, phone, scanTime, csvRows, dirName }) {
         const refreshInfo = getRefreshPayload(csvRows, user, phone, scanTime);
         if (!refreshInfo.hasCsvPayload) {
@@ -837,12 +796,10 @@
         const l2 = match.rightRaw || '';
         const csvPayload = [l1, l2].filter(Boolean).join('\n');
         const scanJson = csvPayload ? buildScanDataFromLines(l1, l2) : null;
-        const signature = scanJson ? simpleHash(`${user}|${phone}|${scanTime}|${scanJson}`) : '';
         return {
           match,
           csvPayload,
           scanJson,
-          signature,
           hasCsvPayload: !!csvPayload,
           hasScanJson: !!scanJson,
           canRefresh: !!csvPayload && !!scanJson,
@@ -932,13 +889,10 @@
             }
             const det = pre.missingDetailed || {};
             const refreshInfo = getRefreshPayload(table.rows, user, phone, scanTime);
-            const needScanDataRefresh = !!pre.transmissionId && refreshInfo.canRefresh && !isRefreshApplied(pre.transmissionId, refreshInfo.signature);
-            const lackBase = describeMissing(pre);
-            const lack = needScanDataRefresh
-              ? (lackBase === 'inget' ? 'scanDataRefresh' : `${lackBase}, scanDataRefresh`)
-              : lackBase;
-            logLine(`[${dir}] i huvudapp: complete=${pre.complete ? 'ja' : 'nej'}, saknar: ${lack}`);
             const needFeet = needsFeetRefresh(det);
+            const shouldRefreshScanData = needFeet && refreshInfo.canRefresh;
+            const lack = describeMissing(pre);
+            logLine(`[${dir}] i huvudapp: complete=${pre.complete ? 'ja' : 'nej'}, saknar: ${lack}`);
             const needReport = !!(det.report ?? miss.report);
             const needModelL = !!(det.modelL ?? miss.modelL);
             const needModelR = !!(det.modelR ?? miss.modelR);
@@ -946,7 +900,7 @@
             const needArchR = !!det.archR;
             const needFoot3dL = !!det.foot3dL;
             const needFoot3dR = !!det.foot3dR;
-            const need = needScanDataRefresh || needFeet || needReport || needModelL || needModelR || needArchL || needArchR || needFoot3dL || needFoot3dR;
+            const need = shouldRefreshScanData || needFeet || needReport || needModelL || needModelR || needArchL || needArchR || needFoot3dL || needFoot3dR;
             dryRunFindings.push({
               key: `${dir}|${phone}|${scanTime}`,
               dir: dirName, user, phone, scanTime,
@@ -1022,8 +976,8 @@
             });
             const det = pre.missingDetailed || {};
             const refreshInfo = getRefreshPayload(table.rows, user, phone, scanTime);
-            const needScanDataRefresh = !!pre.transmissionId && refreshInfo.canRefresh && !isRefreshApplied(pre.transmissionId, refreshInfo.signature);
             const needFeet = needsFeetRefresh(det);
+            const shouldRefreshScanData = needFeet && refreshInfo.canRefresh;
             const needReport = !!(det.report ?? pre.missing?.report);
             const needModelL = !!(det.modelL ?? pre.missing?.modelL);
             const needModelR = !!(det.modelR ?? pre.missing?.modelR);
@@ -1031,7 +985,7 @@
             const needArchR = !!det.archR;
             const needFoot3dL = !!det.foot3dL;
             const needFoot3dR = !!det.foot3dR;
-            if (!needScanDataRefresh && !needFeet && !needReport && !needModelL && !needModelR && !needArchL && !needArchR && !needFoot3dL && !needFoot3dR) {
+            if (!shouldRefreshScanData && !needFeet && !needReport && !needModelL && !needModelR && !needArchL && !needArchR && !needFoot3dL && !needFoot3dR) {
               logLine(`[${dirName}] Komplett i huvudappen – hoppar över.`);
               continue;
             }
@@ -1043,18 +997,17 @@
             logLine(`Transmission (befintlig): ${tx} [${dirName}]`);
 
             // Säkerställ att indexdata/scanData följer med varje vald transmission
-            const refreshApplied = await refreshFeetdataAndScanData({
-              baseUrl,
-              scannerId: sid,
-              transmissionId: tx,
-              user,
-              phone,
-              scanTime,
-              csvRows: table.rows,
-              dirName,
-            });
-            if (needScanDataRefresh && refreshApplied) {
-              markRefreshApplied(tx, refreshInfo.signature);
+            if (shouldRefreshScanData) {
+              await refreshFeetdataAndScanData({
+                baseUrl,
+                scannerId: sid,
+                transmissionId: tx,
+                user,
+                phone,
+                scanTime,
+                csvRows: table.rows,
+                dirName,
+              });
             }
 
             // UPLOAD filer
@@ -1194,13 +1147,10 @@
               const miss = pre.missing || {};
               const det = pre.missingDetailed || {};
               const refreshInfo = getRefreshPayload(filteredRows, user, phone, scanTime);
-              const needScanDataRefresh = !!pre.transmissionId && refreshInfo.canRefresh && !isRefreshApplied(pre.transmissionId, refreshInfo.signature);
-              const lackBase = describeMissing(pre);
-              const lack = needScanDataRefresh
-                ? (lackBase === 'inget' ? 'scanDataRefresh' : `${lackBase}, scanDataRefresh`)
-                : lackBase;
-              logLine(`[${dirName}] i huvudapp: complete=${pre.complete ? 'ja' : 'nej'}, saknar: ${lack}`);
               const needFeet = needsFeetRefresh(det);
+              const shouldRefreshScanData = needFeet && refreshInfo.canRefresh;
+              const lack = describeMissing(pre);
+              logLine(`[${dirName}] i huvudapp: complete=${pre.complete ? 'ja' : 'nej'}, saknar: ${lack}`);
               const needReport = !!(det.report ?? miss.report);
               const needModelL = !!(det.modelL ?? miss.modelL);
               const needModelR = !!(det.modelR ?? miss.modelR);
@@ -1208,7 +1158,7 @@
               const needArchR = !!det.archR;
               const needFoot3dL = !!det.foot3dL;
               const needFoot3dR = !!det.foot3dR;
-              if (!needScanDataRefresh && !needFeet && !needReport && !needModelL && !needModelR && !needArchL && !needArchR && !needFoot3dL && !needFoot3dR) {
+              if (!shouldRefreshScanData && !needFeet && !needReport && !needModelL && !needModelR && !needArchL && !needArchR && !needFoot3dL && !needFoot3dR) {
                 // Already complete → skip
                 continue;
               }
@@ -1220,18 +1170,17 @@
               logLine(`Transmission (befintlig): ${tx} [${dirName}]`);
 
               // Säkerställ att indexdata/scanData följer med varje vald transmission
-              const refreshApplied = await refreshFeetdataAndScanData({
-                baseUrl,
-                scannerId: sid,
-                transmissionId: tx,
-                user,
-                phone,
-                scanTime,
-                csvRows: filteredRows,
-                dirName,
-              });
-              if (needScanDataRefresh && refreshApplied) {
-                markRefreshApplied(tx, refreshInfo.signature);
+              if (shouldRefreshScanData) {
+                await refreshFeetdataAndScanData({
+                  baseUrl,
+                  scannerId: sid,
+                  transmissionId: tx,
+                  user,
+                  phone,
+                  scanTime,
+                  csvRows: filteredRows,
+                  dirName,
+                });
               }
 
               // UPLOAD

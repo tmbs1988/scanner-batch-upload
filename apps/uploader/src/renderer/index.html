@@ -121,15 +121,19 @@
           <div>
             <label>Välj dagsmapp (använd Ctrl för flera)</label>
             <input id="dirInput" type="file" webkitdirectory directory multiple />
+            <div class="actions" style="margin-top:8px">
+              <button id="btnSelectToday" class="secondary">Välj idag</button>
+            </div>
+            <div class="small" id="dirPickedPath">Ingen dagsmapp vald ännu.</div>
             <div class="small">Ex: D:\3D Fotteknik Clinic\scanner_data\2025\11\19</div>
           </div>
           <div>
-            <label>Välj feetbase.csv</label>
+            <label>feetbase.csv</label>
             <div class="row" style="grid-template-columns: 1fr auto;">
               <input id="csvInput" type="file" accept=".csv,text/csv" />
-              <button id="btnPickCsvDefault" class="secondary" title="Öppna D:\LFS350\dataBase\feetbase.csv">Välj standard</button>
+              <button id="btnPickCsvDefault" class="secondary" title="Öppna feetbase.csv på standardplats">Ändra...</button>
             </div>
-            <div class="small" id="csvPickedPath"></div>
+            <div class="small" id="csvPickedPath">Söker efter standardväg...</div>
           </div>
         </div>
         <div class="actions">
@@ -254,10 +258,20 @@
       });
       const BASE_KEY = 'cfg_baseUrl';
       const STORE_KEY = 'cfg_storeName';
+      const ROOT_DIR_KEY = 'cfg_rootDir';
+      const CSV_PATH_KEY = 'cfg_csvPath';
+      const DEFAULT_ROOT_DIR = 'D:\\LFS350';
       const baseUrlEl = document.getElementById('baseUrl');
       const storeEl = document.getElementById('storeName');
       const baseUrlWrap = document.getElementById('baseUrlWrap');
       const logPathEl = document.getElementById('logPath');
+      const rootDirEl = document.getElementById('rootDir');
+      const csvInputEl = document.getElementById('csvInput');
+      const dirInputEl = document.getElementById('dirInput');
+      const csvPickedPathEl = document.getElementById('csvPickedPath');
+      const dirPickedPathEl = document.getElementById('dirPickedPath');
+      let selectedCsvOverride = '';
+      let selectedDirOverrides = [];
       if (window.uploader && window.uploader.getDefaultLogDir) {
         try { logPathEl.textContent = `Loggar sparas i: ${window.uploader.getDefaultLogDir()}`; } catch {}
       }
@@ -274,6 +288,183 @@
         if (lower === 'sweden010002') return '3dfott010002';
         return raw;
       }
+      function normalizeFsPath(value) {
+        return String(value || '').trim().replace(/^"+|"+$/g, '').replace(/\//g, '\\');
+      }
+      function pathLeafName(value) {
+        const normalized = normalizeFsPath(value).replace(/[\\]+$/g, '');
+        const parts = normalized.split(/[\\]+/).filter(Boolean);
+        return parts[parts.length - 1] || normalized;
+      }
+      function parentPath(value) {
+        const normalized = normalizeFsPath(value).replace(/[\\]+$/g, '');
+        if (!normalized) return '';
+        if (/^[A-Za-z]:\\?$/.test(normalized)) return normalized.endsWith('\\') ? normalized : `${normalized}\\`;
+        const idx = normalized.lastIndexOf('\\');
+        if (idx === -1) return normalized;
+        if (idx === 2 && /^[A-Za-z]:/.test(normalized)) return `${normalized.slice(0, 2)}\\`;
+        return normalized.slice(0, idx);
+      }
+      function getPathAncestors(value) {
+        const out = [];
+        let current = normalizeFsPath(value).replace(/[\\]+$/g, '');
+        const seen = new Set();
+        while (current && !seen.has(current)) {
+          out.push(current);
+          seen.add(current);
+          const next = parentPath(current);
+          if (!next || next === current) break;
+          current = next.replace(/[\\]+$/g, m => /^[A-Za-z]:\\$/.test(next) ? '\\' : '');
+        }
+        return out;
+      }
+      function addUniquePath(list, seen, value) {
+        const normalized = normalizeFsPath(value);
+        if (!normalized) return;
+        const key = normalized.toLowerCase();
+        if (seen.has(key)) return;
+        seen.add(key);
+        list.push(normalized);
+      }
+      function getRootDirValue() {
+        return normalizeFsPath(rootDirEl?.value || localStorage.getItem(ROOT_DIR_KEY) || DEFAULT_ROOT_DIR) || DEFAULT_ROOT_DIR;
+      }
+      function buildCsvCandidatePaths(rootHint) {
+        const candidates = [];
+        const seen = new Set();
+        const add = (value) => addUniquePath(candidates, seen, value);
+        if (selectedCsvOverride) add(selectedCsvOverride);
+        const persisted = localStorage.getItem(CSV_PATH_KEY) || '';
+        if (persisted) add(persisted);
+        const roots = getPathAncestors(rootHint || getRootDirValue());
+        for (const base of roots) {
+          add(window.uploader.pathJoin(base, 'dataBase', 'feetbase.csv'));
+          add(window.uploader.pathJoin(base, 'database', 'feetbase.csv'));
+          add(window.uploader.pathJoin(base, 'feetbase.csv'));
+        }
+        add('D:\\LFS350\\dataBase\\feetbase.csv');
+        add('D:\\LFS350\\database\\feetbase.csv');
+        add('D:\\dataBase\\feetbase.csv');
+        add('D:\\database\\feetbase.csv');
+        return candidates;
+      }
+      function resolveCsvPath(rootHint) {
+        const candidates = buildCsvCandidatePaths(rootHint);
+        for (const candidate of candidates) {
+          if (window.uploader.exists(candidate)) return candidate;
+        }
+        return candidates[0] || '';
+      }
+      function setSelectedCsvPath(path, options = {}) {
+        const normalized = normalizeFsPath(path);
+        selectedCsvOverride = normalized;
+        if (!normalized) {
+          csvPickedPathEl.textContent = 'Ingen CSV vald.';
+          if (options.persist !== false) {
+            try { localStorage.removeItem(CSV_PATH_KEY); } catch {}
+          }
+          return '';
+        }
+        csvPickedPathEl.textContent = `Vald CSV: ${normalized}`;
+        if (options.persist !== false) {
+          try { localStorage.setItem(CSV_PATH_KEY, normalized); } catch {}
+        }
+        if (options.log) logLine(`Använder CSV: ${normalized}`);
+        return normalized;
+      }
+      function refreshSelectedCsvPath(rootHint, options = {}) {
+        const resolved = resolveCsvPath(rootHint);
+        if (resolved && window.uploader.exists(resolved)) {
+          return setSelectedCsvPath(resolved, options);
+        }
+        const attempted = buildCsvCandidatePaths(rootHint).slice(0, 4).join(' | ');
+        csvPickedPathEl.textContent = attempted ? `Ingen CSV hittad. Försökte: ${attempted}` : 'Ingen CSV hittad.';
+        if (options.log) logLine(`Hittar inte CSV. Försökte: ${attempted || 'inga standardvägar'}`);
+        return '';
+      }
+      function setSelectedDirPaths(paths, options = {}) {
+        selectedDirOverrides = paths.map(normalizeFsPath).filter(Boolean);
+        try { dirInputEl.value = ''; } catch {}
+        if (!selectedDirOverrides.length) {
+          dirPickedPathEl.textContent = 'Ingen dagsmapp vald ännu.';
+          return;
+        }
+        dirPickedPathEl.textContent = selectedDirOverrides.length === 1
+          ? `Vald dagsmapp: ${selectedDirOverrides[0]}`
+          : `Valda dagsmappar: ${selectedDirOverrides.length}`;
+        if (options.log) {
+          logLine(selectedDirOverrides.length === 1
+            ? `Vald dagsmapp: ${selectedDirOverrides[0]}`
+            : `Valda dagsmappar: ${selectedDirOverrides.join(' | ')}`);
+        }
+      }
+      function updateDirSelectionSummary() {
+        if (selectedDirOverrides.length) {
+          setSelectedDirPaths(selectedDirOverrides, { log: false });
+          return;
+        }
+        if (dirInputEl.files?.length) {
+          dirPickedPathEl.textContent = `Vald via filväljaren: ${dirInputEl.files.length} filer från dagsmappen.`;
+          return;
+        }
+        dirPickedPathEl.textContent = 'Ingen dagsmapp vald ännu.';
+      }
+      function whitelistPaths(dirPaths) {
+        const result = [];
+        for (const dirPath of dirPaths) {
+          const root = normalizeFsPath(dirPath);
+          const files = window.uploader.listFilesRecursive(root);
+          for (const f of files) {
+            const lower = String(f.name || '').toLowerCase();
+            const isReport = lower.endsWith('.pdf');
+            const isModel  = lower.endsWith('.oex') || lower.endsWith('.stl') || lower.endsWith('.obj');
+            const isImage  = /\.(bmp|jpg|jpeg|png)$/i.test(lower) && (lower.includes('arch') || lower.includes('foot3d') || lower.includes('pronator'));
+            if (!(isReport || isModel || isImage)) continue;
+            const relInside = normalizeFsPath(f.fullPath).slice(root.length).replace(/^[\\]+/, '').replace(/\\/g, '/');
+            const relPath = relInside.includes('/') ? relInside : `${pathLeafName(root)}/${relInside || f.name}`;
+            result.push({
+              path: f.fullPath,
+              name: f.name,
+              relPath,
+              isReport,
+              isModel,
+              isImage,
+              mtimeMs: f.mtimeMs || 0,
+            });
+          }
+        }
+        return result;
+      }
+      function getSelectedManualItems() {
+        if (dirInputEl.files?.length) return whitelistFiles(dirInputEl.files);
+        if (selectedDirOverrides.length) return whitelistPaths(selectedDirOverrides);
+        return [];
+      }
+      function getItemModifiedMs(item) {
+        return Number(item?.file?.lastModified || item?.mtimeMs || 0);
+      }
+      async function readWhitelistedItemBase64(item) {
+        if (item?.file) return fileToBase64(item.file);
+        if (item?.path) return window.uploader.readTextFile(item.path, 'base64');
+        return '';
+      }
+      function getWhitelistedItemContentType(item, name) {
+        return item?.file?.type || guessContentTypeByName(name);
+      }
+      async function readCsvTextForUi(rootHint, options = {}) {
+        if (options.allowFileInput !== false && csvInputEl.files?.length) {
+          return csvInputEl.files[0].text();
+        }
+        const resolved = refreshSelectedCsvPath(rootHint, { log: options.logMissing });
+        if (!resolved || !window.uploader.exists(resolved)) return '';
+        try {
+          if (options.logUsedPath) logLine(`Använder CSV: ${resolved}`);
+          return window.uploader.readTextFile(resolved);
+        } catch {
+          if (options.logMissing) logLine(`Kunde inte läsa CSV: ${resolved}`);
+          return '';
+        }
+      }
       storeEl.value = normalizeStoreName(localStorage.getItem(STORE_KEY) || '');
       function getBaseUrl()  { return baseUrlEl.value.trim() || 'https://app.3dfotteknik.se'; }
       function getStoreName(){ return normalizeStoreName(storeEl.value); }
@@ -287,6 +478,28 @@
       // Visa alltid Base URL (även i release) så vi ser värdet och kan ändra vid behov
       baseUrlEl.value = baseUrlEl.value || 'https://app.3dfotteknik.se';
       try { localStorage.setItem(BASE_KEY, baseUrlEl.value); } catch {}
+      try {
+        rootDirEl.value = normalizeFsPath(localStorage.getItem(ROOT_DIR_KEY) || rootDirEl.value || DEFAULT_ROOT_DIR) || DEFAULT_ROOT_DIR;
+      } catch {
+        rootDirEl.value = DEFAULT_ROOT_DIR;
+      }
+      rootDirEl.addEventListener('change', () => {
+        const normalized = getRootDirValue();
+        rootDirEl.value = normalized;
+        try { localStorage.setItem(ROOT_DIR_KEY, normalized); } catch {}
+        refreshSelectedCsvPath(normalized);
+      });
+      csvInputEl.addEventListener('change', () => {
+        if (csvInputEl.files?.length) {
+          csvPickedPathEl.textContent = `Tillfällig CSV vald manuellt: ${csvInputEl.files[0].name}`;
+        } else {
+          refreshSelectedCsvPath(getRootDirValue());
+        }
+      });
+      dirInputEl.addEventListener('change', () => {
+        if (dirInputEl.files?.length) selectedDirOverrides = [];
+        updateDirSelectionSummary();
+      });
 
       // Init‑ping
       (async () => {
@@ -300,6 +513,8 @@
           const m = document.querySelector('main');
           if (m) m.scrollTop = 0;
         } catch {}
+        refreshSelectedCsvPath(getRootDirValue());
+        updateDirSelectionSummary();
         await pingServer().catch(() => {});
       })();
 
@@ -603,6 +818,14 @@
         } catch {}
         return a; // fallback
       }
+      document.getElementById('btnSelectToday').addEventListener('click', () => {
+        const todayPath = dayFolder(getRootDirValue(), new Date());
+        if (!window.uploader.exists(todayPath)) {
+          logLine(`Hittar inte dagens dagsmapp: ${todayPath}`);
+          return;
+        }
+        setSelectedDirPaths([todayPath], { log: true });
+      });
 
       function base64ToBytes(b64) {
         try {
@@ -842,23 +1065,10 @@
       }
 
       document.getElementById('btnDryRun').addEventListener('click', async () => {
-        const dirInput = document.getElementById('dirInput');
-        const csvInput = document.getElementById('csvInput');
-        if (!dirInput.files?.length) { logLine('Välj en dagsmapp först.'); return; }
-        // Läs CSV från vald fil, eller använd tidigare vald/standard
-        let csvText = '';
-        if (csvInput.files?.length) {
-          csvText = await csvInput.files[0].text();
-        } else {
-          let path = selectedCsvOverride;
-          if (!path) {
-            path = await window.uploader.pickCsv('D:\\\\LFS350\\\\dataBase\\\\feetbase.csv');
-            if (!path) { logLine('Välj feetbase.csv.'); return; }
-            selectedCsvOverride = path;
-          }
-          try { csvText = window.uploader.readTextFile(path); csvPickedPathEl.textContent = path; }
-          catch { logLine('Kunde inte läsa vald CSV.'); return; }
-        }
+        const manualItems = getSelectedManualItems();
+        if (!manualItems.length) { logLine('Välj en dagsmapp först.'); return; }
+        const csvText = await readCsvTextForUi(getRootDirValue(), { logMissing: true, logUsedPath: true });
+        if (!csvText) return;
         dryRunFindings = [];
         dryRunSelectedKeys = null;
         const lines   = parseCsvLines(csvText);
@@ -902,8 +1112,7 @@
         } else {
           logLine('Hittade inget store_name i CSV – kontrollera headern och att rad 2 innehåller värdet.');
         }
-        const whitelisted = whitelistFiles(dirInput.files);
-        const groups = groupByDir(whitelisted);
+        const groups = groupByDir(manualItems);
         const baseUrl = getBaseUrl();
         const store   = getStoreName();
         for (const [dir, items] of groups.entries()) {
@@ -914,7 +1123,7 @@
           try {
             const dirName = (dir.split('/').pop() || '').trim();
             const { phone, user } = parseFolderName(dirName);
-            const folderScanTime = new Date(Math.max(...items.map(i => i.file.lastModified))).toISOString();
+            const folderScanTime = new Date(Math.max(...items.map(getItemModifiedMs))).toISOString();
             const scanContext = resolveScanContext(table.rows, user, phone, folderScanTime);
             const scanTime = scanContext.scanTime;
             if (scanContext.scanTimeSource === 'csv' && scanTime !== folderScanTime) {
@@ -955,14 +1164,11 @@
         try { openDryRunModal(dryRunFindings); } catch {}
       });
 
-      let selectedCsvOverride = '';
-      const csvPickedPathEl = document.getElementById('csvPickedPath');
       document.getElementById('btnPickCsvDefault').addEventListener('click', async () => {
-        const picked = await window.uploader.pickCsv('D:\\\\LFS350\\\\dataBase\\\\feetbase.csv');
+        const picked = await window.uploader.pickCsv(resolveCsvPath(getRootDirValue()) || 'D:\\\\LFS350\\\\dataBase\\\\feetbase.csv');
         if (picked) {
-          selectedCsvOverride = picked;
-          try { csvPickedPathEl.textContent = picked; } catch {}
-          logLine(`Vald CSV: ${picked}`);
+          setSelectedCsvPath(picked, { log: true });
+          try { csvInputEl.value = ''; } catch {}
         } else {
           logLine('CSV-val avbröts.');
         }
@@ -971,25 +1177,18 @@
       document.getElementById('btnStart').addEventListener('click', async () => {
         const baseUrl = getBaseUrl();
         const store   = getStoreName();
-        const dirInput = document.getElementById('dirInput');
-        const csvInput = document.getElementById('csvInput');
+        const manualItems = getSelectedManualItems();
         if (!store) { logLine('Fyll i Scanner serial (store_name).'); return; }
-        if (!dirInput.files?.length) { logLine('Välj en dagsmapp.'); return; }
-        if (!csvInput.files?.length && !selectedCsvOverride) { logLine('Välj feetbase.csv.'); return; }
+        if (!manualItems.length) { logLine('Välj en dagsmapp.'); return; }
 
         // Quick connectivity check
         const ok = await pingServer();
         if (!ok) { logLine('Avbryter – kan inte nå servern.'); return; }
 
-        let csvText = '';
-        if (csvInput.files?.length) {
-          csvText = await csvInput.files[0].text();
-        } else if (selectedCsvOverride) {
-          try { csvText = window.uploader.readTextFile(selectedCsvOverride); } catch { logLine('Kunde inte läsa vald CSV.'); return; }
-        }
+        const csvText = await readCsvTextForUi(getRootDirValue(), { logMissing: true, logUsedPath: true });
+        if (!csvText) return;
         const table   = parseCsvTable(csvText);
-        const whitelisted = whitelistFiles(dirInput.files);
-        const groups = groupByDir(whitelisted);
+        const groups = groupByDir(manualItems);
         // Sekventiellt index används inte längre – rader väljs per undermapp
 
         for (const [dir, items] of groups.entries()) {
@@ -997,7 +1196,7 @@
           if (dryRunSelectedKeys && dryRunSelectedKeys.size > 0) {
             const dirName = (dir.split('/').pop() || '').trim();
             const { phone, user } = parseFolderName(dirName);
-            const folderScanTimeKey = new Date(Math.max(...items.map(i => i.file.lastModified))).toISOString();
+            const folderScanTimeKey = new Date(Math.max(...items.map(getItemModifiedMs))).toISOString();
             const scanContextKey = resolveScanContext(table.rows, user, phone, folderScanTimeKey);
             const scanTimeKey = scanContextKey.scanTime;
             const key = `${dir}|${phone}|${scanTimeKey}`;
@@ -1010,7 +1209,7 @@
             logLine(`Bearbetar ${dir}…`);
             const dirName = (dir.split('/').pop() || '').trim();
             const { phone, user } = parseFolderName(dirName);
-            const folderScanTime = new Date(Math.max(...items.map(i => i.file.lastModified))).toISOString();
+            const folderScanTime = new Date(Math.max(...items.map(getItemModifiedMs))).toISOString();
             const scanContext = resolveScanContext(table.rows, user, phone, folderScanTime);
             const scanTime = scanContext.scanTime;
             if (scanContext.scanTimeSource === 'csv' && scanTime !== folderScanTime) {
@@ -1067,8 +1266,8 @@
               if (kind === 'report' && !needReport) continue;
               if (kind === 'modelL' && !needModelL) continue;
               if (kind === 'modelR' && !needModelR) continue;
-              const base64 = await fileToBase64(item.file);
-              const contentType = item.file.type || guessContentTypeByName(name);
+              const base64 = await readWhitelistedItemBase64(item);
+              const contentType = getWhitelistedItemContentType(item, name);
               try {
                 await uploadViaSigned(baseUrl, sid, tx, name, contentType, base64);
                 logLine(`Uppladdad: ${name}`);
@@ -1113,17 +1312,14 @@
       // Auto-run (filesystem via preload)
       document.getElementById('btnAuto').addEventListener('click', async () => {
         const baseUrl = getBaseUrl();
-        const rootEl = document.getElementById('rootDir');
         const includeYesterday = document.getElementById('includeYesterday').checked;
-          const root = (rootEl.value && rootEl.value.trim()) || 'D:\\\\LFS350';
+        const root = getRootDirValue();
 
         // Försök auto-hämta store_name från CSV om fältet är tomt
-        const csvPath = window.uploader.pathJoin(root, 'dataBase', 'feetbase.csv');
-        if (!window.uploader.exists(csvPath)) {
-          logLine(`Hittar inte CSV: ${csvPath}`);
-        }
+        const csvPath = refreshSelectedCsvPath(root, { log: true });
+        if (!csvPath || !window.uploader.exists(csvPath)) return;
         let csvText = '';
-        try { csvText = window.uploader.readTextFile(csvPath); } catch {}
+        try { csvText = window.uploader.readTextFile(csvPath); } catch { logLine(`Kunde inte läsa CSV: ${csvPath}`); return; }
         if (!getStoreName() && csvText) {
           const guessed = extractStoreNameFromCsv(csvText);
           if (guessed) {
@@ -1313,10 +1509,14 @@
           if (cfg) {
             if (cfg.enabled) btnToggle.textContent = 'Inaktivera automatisk körning';
             if (cfg.time) timeEl.value = cfg.time;
-            if (cfg.root) rootEl.value = cfg.root;
+            if (cfg.root) {
+              rootEl.value = cfg.root;
+              localStorage.setItem(ROOT_DIR_KEY, cfg.root);
+            }
             if (cfg.includeYesterday !== undefined) yesterdayEl.checked = cfg.includeYesterday;
           }
         } catch {}
+        refreshSelectedCsvPath(getRootDirValue());
         
         btnToggle.addEventListener('click', async () => {
           try {
@@ -1344,11 +1544,11 @@
           const params = new URLSearchParams(location.search);
           const auto = params.get('auto') === '1';
           if (!auto) return;
-          const root = params.get('root') || 'D:\\\\LFS350';
+          const root = normalizeFsPath(params.get('root') || getRootDirValue() || DEFAULT_ROOT_DIR);
 
           // Om store saknas, försök hämta från CSV under root
           if (!getStoreName()) {
-            const csvPath = window.uploader.pathJoin(root, 'dataBase', 'feetbase.csv');
+            const csvPath = refreshSelectedCsvPath(root);
             if (window.uploader.exists(csvPath)) {
               try {
                 const csvText = window.uploader.readTextFile(csvPath);

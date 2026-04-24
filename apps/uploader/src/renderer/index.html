@@ -295,6 +295,16 @@
       // Dry run findings/selection (manual mode)
       let dryRunFindings = [];
       let dryRunSelectedKeys = null; // Set<string>
+      function needsFeetRefresh(det = {}) {
+        return !!det.feetLeft || !!det.feetRight || !!det.archDataLeft || !!det.archDataRight;
+      }
+      function describeMissing(resp) {
+        const allMissing = { ...(resp?.missing || {}), ...(resp?.missingDetailed || {}) };
+        return Object.entries(allMissing).filter(([_, v]) => v).map(([k]) => k).join(', ') || 'inget';
+      }
+      function isPortalComplete(resp) {
+        return describeMissing(resp) === 'inget';
+      }
       function openDryRunModal(findings) {
         const modal = document.getElementById('dryRunModal');
         const list  = document.getElementById('dryRunList');
@@ -769,7 +779,7 @@
               const preResp = await postJson(`${baseUrl}/api/scanners/upload-manual-file`, {
                 store_name: entry.store, user_name: entry.user, phone: entry.phone, scanTime: entry.scanTime, checkOnly: true
               });
-              if (preResp.existing && preResp.existing.complete === 'ja') {
+              if (isPortalComplete(preResp)) {
                 logLine(`✓ ${entry.dir} är nu komplett – tar bort från retry-kö`);
                 removeFromRetryQueue(entry);
                 continue;
@@ -817,10 +827,9 @@
               logLine(`[${dir}] match: tx=${pre.transmissionId}, mode=${matched}, phoneMatch=${mf.phoneMatched?'ja':'nej'}, nameMatch=${mf.userMatched?'ja':'nej'}`);
             }
             const det = pre.missingDetailed || {};
-            const allMissing = { ...miss, ...det };
-            const lack = Object.entries(allMissing).filter(([k,v]) => v).map(([k]) => k).join(', ') || 'inget';
+            const lack = describeMissing(pre);
             logLine(`[${dir}] i huvudapp: complete=${pre.complete ? 'ja' : 'nej'}, saknar: ${lack}`);
-            const needFeet = !!det.feetLeft || !!det.feetRight;
+            const needFeet = needsFeetRefresh(det);
             const needReport = !!(det.report ?? miss.report);
             const needModelL = !!(det.modelL ?? miss.modelL);
             const needModelR = !!(det.modelR ?? miss.modelR);
@@ -902,9 +911,8 @@
             const pre = await postJson(`${baseUrl}/api/scanners/upload-manual-file`, {
               checkOnly: true, store_name: store, user_name: user, phone, scanTime
             });
-            const ex = pre.existing || { feetdata:false, report:false, modelL:false, modelR:false, images:{arch:0,foot3d:0,pronator:0}, sides:{ archL:false,archR:false,foot3dL:false,foot3dR:false } };
             const det = pre.missingDetailed || {};
-            const needFeet = (!!det.feetLeft || !!det.feetRight);
+            const needFeet = needsFeetRefresh(det);
             const needReport = !!(det.report ?? pre.missing?.report);
             const needModelL = !!(det.modelL ?? pre.missing?.modelL);
             const needModelR = !!(det.modelR ?? pre.missing?.modelR);
@@ -992,11 +1000,11 @@
                   verifyResp = await postJson(`${baseUrl}/api/scanners/upload-manual-file`, {
                     store_name: store, user_name: user, phone, scanTime, checkOnly: true
                   });
-                  if (verifyResp?.existing && verifyResp?.existing?.complete === 'ja') break;
+                  if (isPortalComplete(verifyResp)) break;
                 } catch {}
               }
-              if (!verifyResp?.existing || verifyResp.existing.complete !== 'ja') {
-              const missing = verifyResp.existing?.missing?.join(', ') || 'okänt';
+              if (!isPortalComplete(verifyResp)) {
+              const missing = describeMissing(verifyResp);
               logLine(`⚠️ Verifiering misslyckades för ${dir}: saknar ${missing}`);
               saveToRetryQueue({ dir, store, user, phone, scanTime, reason: `Ofullständig efter upload: ${missing}` });
             } else {
@@ -1091,9 +1099,9 @@
               });
               const miss = pre.missing || {};
               const det = pre.missingDetailed || {};
-              const lack = Object.entries({ ...miss, ...det }).filter(([k,v]) => v).map(([k]) => k).join(', ') || 'inget';
+              const lack = describeMissing(pre);
               logLine(`[${dirName}] i huvudapp: complete=${pre.complete ? 'ja' : 'nej'}, saknar: ${lack}`);
-              const needFeet = !!det.feetLeft || !!det.feetRight;
+              const needFeet = needsFeetRefresh(det);
               const needReport = !!(det.report ?? miss.report);
               const needModelL = !!(det.modelL ?? miss.modelL);
               const needModelR = !!(det.modelR ?? miss.modelR);
@@ -1195,8 +1203,8 @@
               const verifyResp = await postJson(`${baseUrl}/api/scanners/upload-manual-file`, {
                 store_name: store, user_name: user, phone, scanTime, checkOnly: true
               });
-              if (!verifyResp.existing || verifyResp.existing.complete !== 'ja') {
-                const missing = verifyResp.existing?.missing?.join(', ') || 'okänt';
+              if (!isPortalComplete(verifyResp)) {
+                const missing = describeMissing(verifyResp);
                 logLine(`⚠️ Verifiering misslyckades för ${dirName}: saknar ${missing}`);
                 saveToRetryQueue({ dir: dirName, store, user, phone, scanTime, reason: `Ofullständig efter upload: ${missing}` });
               } else {

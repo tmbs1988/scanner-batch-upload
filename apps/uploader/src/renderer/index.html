@@ -357,16 +357,24 @@
         const seen = new Set();
         const add = (value) => addUniquePath(candidates, seen, value);
         const y = d.getFullYear();
+        const yy = pad2(y % 100);
         const m = pad2(d.getMonth()+1);
         const dd = pad2(d.getDate());
         const compact = `${y}${m}${dd}`;
+        const compactShort = `${yy}${m}${dd}`;
         const roots = getPathAncestors(rootHint || getRootDirValue());
         for (const base of roots) {
+          add(window.uploader.pathJoin(base, yy, m, dd));
           add(window.uploader.pathJoin(base, String(y), m, dd));
+          add(window.uploader.pathJoin(base, compactShort));
           add(window.uploader.pathJoin(base, compact));
+          add(window.uploader.pathJoin(base, 'scanner_data', yy, m, dd));
           add(window.uploader.pathJoin(base, 'scanner_data', String(y), m, dd));
+          add(window.uploader.pathJoin(base, 'scanner_data', compactShort));
           add(window.uploader.pathJoin(base, 'scanner_data', compact));
+          add(window.uploader.pathJoin(base, 'data', yy, m, dd));
           add(window.uploader.pathJoin(base, 'data', String(y), m, dd));
+          add(window.uploader.pathJoin(base, 'data', compactShort));
           add(window.uploader.pathJoin(base, 'data', compact));
         }
         return candidates;
@@ -631,6 +639,33 @@
         if (counts.tab > counts.comma && counts.tab > counts.semicolon) return '\t';
         return ',';
       }
+      function parseScanTimeValue(value) {
+        const raw = String(value || '').trim();
+        if (!raw) return { scanTime: null, dayKey: '' };
+        const m = raw.match(/^(\d{4})[-./](\d{2})[-./](\d{2})(?:[ T](\d{2})(?::(\d{2}))?(?::(\d{2}))?)?/);
+        if (m) {
+          const year = Number(m[1]);
+          const month = Number(m[2]);
+          const day = Number(m[3]);
+          const hour = Number(m[4] || '0');
+          const minute = Number(m[5] || '0');
+          const second = Number(m[6] || '0');
+          const dt = new Date(year, month - 1, day, hour, minute, second);
+          return {
+            scanTime: isNaN(dt.getTime()) ? null : dt,
+            dayKey: `${year}-${pad2(month)}-${pad2(day)}`
+          };
+        }
+        const fallback = new Date(raw.replace(/\./g, '-'));
+        if (isNaN(fallback.getTime())) return { scanTime: null, dayKey: '' };
+        return {
+          scanTime: fallback,
+          dayKey: `${fallback.getFullYear()}-${pad2(fallback.getMonth()+1)}-${pad2(fallback.getDate())}`
+        };
+      }
+      function dayKeyFromDate(d) {
+        return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
+      }
       function parseCsvTable(text) {
         const rows = text.split(/\r?\n/).filter(r => r.trim().length > 0);
         if (rows.length === 0) return { header: [], rows: [] };
@@ -643,13 +678,9 @@
           const cells = split(raw);
           const obj = {};
           for (let c = 0; c < header.length; c++) obj[header[c]] = cells[c] ?? '';
-          let scanTime = null;
           const st = obj['ScanTime'] || obj['scanTime'] || obj['scantime'] || '';
-          if (st) {
-            const dt = new Date(st.replace(/\./g, '-'));
-            if (!isNaN(dt.getTime())) scanTime = dt;
-          }
-          out.push({ raw, cells, obj, scanTime });
+          const parsedScan = parseScanTimeValue(st);
+          out.push({ raw, cells, obj, scanTime: parsedScan.scanTime, scanDayKey: parsedScan.dayKey });
         }
         return { header, rows: out };
       }
@@ -1390,14 +1421,15 @@
         const table = parseCsvTable(csvText);
         // Datumfilter: idag + ev. gårdag
         const today = new Date();
-        const isSameDay = (a, b) => a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate();
         const yday = new Date(today); yday.setDate(today.getDate()-1);
+        const dayKeys = new Set([dayKeyFromDate(today)]);
+        if (includeYesterday) dayKeys.add(dayKeyFromDate(yday));
         const filteredRows = table.rows.filter(r => {
+          if (r.scanDayKey && dayKeys.has(r.scanDayKey)) return true;
           if (!r.scanTime) return false;
-          return isSameDay(r.scanTime, today) || (includeYesterday && isSameDay(r.scanTime, yday));
+          return dayKeys.has(dayKeyFromDate(r.scanTime));
         });
         if (filteredRows.length === 0) { logLine('Inga CSV-rader för idag/gårdag.'); return; }
-        const filteredLines = filteredRows.map(r => r.raw);
 
         const days = [today];
         if (includeYesterday) { const y = new Date(today); y.setDate(today.getDate()-1); days.unshift(y); }

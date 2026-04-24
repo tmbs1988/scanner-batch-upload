@@ -794,6 +794,19 @@
         }
       }
 
+      function getRefreshPayload(csvRows, user, phone, scanTime) {
+        const match = findCsvRowsForPatient(csvRows, user, phone, scanTime);
+        const l1 = match.leftRaw || '';
+        const l2 = match.rightRaw || '';
+        const csvPayload = [l1, l2].filter(Boolean).join('\n');
+        const scanJson = csvPayload ? buildScanDataFromLines(l1, l2) : null;
+        return {
+          hasCsvPayload: !!csvPayload,
+          hasScanJson: !!scanJson,
+          canRefresh: !!csvPayload && !!scanJson,
+        };
+      }
+
       document.getElementById('btnDryRun').addEventListener('click', async () => {
         const dirInput = document.getElementById('dirInput');
         const csvInput = document.getElementById('csvInput');
@@ -875,7 +888,12 @@
               logLine(`[${dir}] match: tx=${pre.transmissionId}, mode=${matched}, phoneMatch=${mf.phoneMatched?'ja':'nej'}, nameMatch=${mf.userMatched?'ja':'nej'}`);
             }
             const det = pre.missingDetailed || {};
-            const lack = describeMissing(pre);
+            const refreshInfo = getRefreshPayload(table.rows, user, phone, scanTime);
+            const needScanDataRefresh = !!pre.transmissionId && refreshInfo.canRefresh;
+            const lackBase = describeMissing(pre);
+            const lack = needScanDataRefresh
+              ? (lackBase === 'inget' ? 'scanDataRefresh' : `${lackBase}, scanDataRefresh`)
+              : lackBase;
             logLine(`[${dir}] i huvudapp: complete=${pre.complete ? 'ja' : 'nej'}, saknar: ${lack}`);
             const needFeet = needsFeetRefresh(det);
             const needReport = !!(det.report ?? miss.report);
@@ -885,7 +903,7 @@
             const needArchR = !!det.archR;
             const needFoot3dL = !!det.foot3dL;
             const needFoot3dR = !!det.foot3dR;
-            const need = needFeet || needReport || needModelL || needModelR || needArchL || needArchR || needFoot3dL || needFoot3dR;
+            const need = needScanDataRefresh || needFeet || needReport || needModelL || needModelR || needArchL || needArchR || needFoot3dL || needFoot3dR;
             dryRunFindings.push({
               key: `${dir}|${phone}|${scanTime}`,
               dir: dirName, user, phone, scanTime,
@@ -960,6 +978,8 @@
               checkOnly: true, store_name: store, user_name: user, phone, scanTime
             });
             const det = pre.missingDetailed || {};
+            const refreshInfo = getRefreshPayload(table.rows, user, phone, scanTime);
+            const needScanDataRefresh = !!pre.transmissionId && refreshInfo.canRefresh;
             const needFeet = needsFeetRefresh(det);
             const needReport = !!(det.report ?? pre.missing?.report);
             const needModelL = !!(det.modelL ?? pre.missing?.modelL);
@@ -968,7 +988,7 @@
             const needArchR = !!det.archR;
             const needFoot3dL = !!det.foot3dL;
             const needFoot3dR = !!det.foot3dR;
-            if (!needFeet && !needReport && !needModelL && !needModelR && !needArchL && !needArchR && !needFoot3dL && !needFoot3dR) {
+            if (!needScanDataRefresh && !needFeet && !needReport && !needModelL && !needModelR && !needArchL && !needArchR && !needFoot3dL && !needFoot3dR) {
               logLine(`[${dirName}] Komplett i huvudappen – hoppar över.`);
               continue;
             }
@@ -1127,7 +1147,12 @@
               });
               const miss = pre.missing || {};
               const det = pre.missingDetailed || {};
-              const lack = describeMissing(pre);
+              const refreshInfo = getRefreshPayload(filteredRows, user, phone, scanTime);
+              const needScanDataRefresh = !!pre.transmissionId && refreshInfo.canRefresh;
+              const lackBase = describeMissing(pre);
+              const lack = needScanDataRefresh
+                ? (lackBase === 'inget' ? 'scanDataRefresh' : `${lackBase}, scanDataRefresh`)
+                : lackBase;
               logLine(`[${dirName}] i huvudapp: complete=${pre.complete ? 'ja' : 'nej'}, saknar: ${lack}`);
               const needFeet = needsFeetRefresh(det);
               const needReport = !!(det.report ?? miss.report);
@@ -1137,7 +1162,7 @@
               const needArchR = !!det.archR;
               const needFoot3dL = !!det.foot3dL;
               const needFoot3dR = !!det.foot3dR;
-              if (!needFeet && !needReport && !needModelL && !needModelR && !needArchL && !needArchR && !needFoot3dL && !needFoot3dR) {
+              if (!needScanDataRefresh && !needFeet && !needReport && !needModelL && !needModelR && !needArchL && !needArchR && !needFoot3dL && !needFoot3dR) {
                 // Already complete → skip
                 continue;
               }

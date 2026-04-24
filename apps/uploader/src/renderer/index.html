@@ -211,6 +211,7 @@
       
       // Retry queue management
       const RETRY_QUEUE_KEY = 'upload_retry_queue';
+      const REFRESH_STATE_KEY = 'scan_data_refresh_state';
       function loadRetryQueue() {
         try {
           const raw = localStorage.getItem(RETRY_QUEUE_KEY);
@@ -244,6 +245,36 @@
           queue = queue.filter(e => !(e.dir === entry.dir && e.phone === entry.phone && e.scanTime === entry.scanTime));
           localStorage.setItem(RETRY_QUEUE_KEY, JSON.stringify(queue));
         } catch {}
+      }
+      function loadRefreshState() {
+        try {
+          const raw = localStorage.getItem(REFRESH_STATE_KEY);
+          return raw ? JSON.parse(raw) : {};
+        } catch {
+          return {};
+        }
+      }
+      function saveRefreshState(state) {
+        try {
+          localStorage.setItem(REFRESH_STATE_KEY, JSON.stringify(state));
+        } catch {}
+      }
+      function markRefreshApplied(transmissionId, signature) {
+        if (!transmissionId || !signature) return;
+        const state = loadRefreshState();
+        state[transmissionId] = signature;
+        saveRefreshState(state);
+      }
+      function isRefreshApplied(transmissionId, signature) {
+        if (!transmissionId || !signature) return false;
+        const state = loadRefreshState();
+        return state[transmissionId] === signature;
+      }
+      function clearRefreshApplied(transmissionId) {
+        if (!transmissionId) return;
+        const state = loadRefreshState();
+        delete state[transmissionId];
+        saveRefreshState(state);
       }
       // Global felhookar så att dolda fel syns i loggen
       window.addEventListener('error', (e) => {
@@ -757,37 +788,43 @@
         }
         try { return JSON.stringify(obj); } catch { return null; }
       }
+      function simpleHash(input) {
+        const text = String(input || '');
+        let hash = 0;
+        for (let i = 0; i < text.length; i++) {
+          hash = ((hash << 5) - hash) + text.charCodeAt(i);
+          hash |= 0;
+        }
+        return String(hash);
+      }
 
       async function refreshFeetdataAndScanData({ baseUrl, scannerId, transmissionId, user, phone, scanTime, csvRows, dirName }) {
-        const match = findCsvRowsForPatient(csvRows, user, phone, scanTime);
-        const l1 = match.leftRaw || '';
-        const l2 = match.rightRaw || '';
-        const csvPayload = [l1, l2].filter(Boolean).join('\n');
-        if (!csvPayload) {
+        const refreshInfo = getRefreshPayload(csvRows, user, phone, scanTime);
+        if (!refreshInfo.hasCsvPayload) {
           logLine(`[${dirName}] Ingen matchad CSV-rad för scanData-refresh.`);
           return false;
         }
 
         try {
-          await postJson(`${baseUrl}/api/scanners/upload-manual-file`, { transmissionId, csvText: csvPayload });
-          const lm = match.leftMatch?.obj?.ScanTime || match.leftMatch?.obj?.scanTime || '';
-          const rm = match.rightMatch?.obj?.ScanTime || match.rightMatch?.obj?.scanTime || '';
+          await postJson(`${baseUrl}/api/scanners/upload-manual-file`, { transmissionId, csvText: refreshInfo.csvPayload });
+          const lm = refreshInfo.match.leftMatch?.obj?.ScanTime || refreshInfo.match.leftMatch?.obj?.scanTime || '';
+          const rm = refreshInfo.match.rightMatch?.obj?.ScanTime || refreshInfo.match.rightMatch?.obj?.scanTime || '';
           logLine(`[${dirName}] Importerade feetdata via CSV (match): L="${lm}" R="${rm}".`);
 
-          const scanJson = buildScanDataFromLines(l1, l2);
-          if (scanJson) {
+          if (refreshInfo.scanJson) {
             try {
-              const b64 = stringToBase64Utf8(scanJson);
+              const b64 = stringToBase64Utf8(refreshInfo.scanJson);
               await uploadViaSigned(baseUrl, scannerId, transmissionId, 'scanData.json', 'application/json', b64);
               logLine(`[${dirName}] Laddade upp scanData.json (byggd från matchade CSV-rader).`);
+              return true;
             } catch (e) {
               logLine(`[${dirName}] Kunde inte ladda upp scanData.json: ${e?.message || e}`);
+              return false;
             }
           } else {
             logLine(`[${dirName}] Kunde inte bygga scanData.json från CSV.`);
+            return false;
           }
-
-          return true;
         } catch (e) {
           logLine(`[${dirName}] CSV-import misslyckades: ${e?.message || e}`);
           return false;
@@ -800,7 +837,12 @@
         const l2 = match.rightRaw || '';
         const csvPayload = [l1, l2].filter(Boolean).join('\n');
         const scanJson = csvPayload ? buildScanDataFromLines(l1, l2) : null;
+        const signature = scanJson ? simpleHash(`${user}|${phone}|${scanTime}|${scanJson}`) : '';
         return {
+          match,
+          csvPayload,
+          scanJson,
+          signature,
           hasCsvPayload: !!csvPayload,
           hasScanJson: !!scanJson,
           canRefresh: !!csvPayload && !!scanJson,
@@ -890,7 +932,7 @@
             }
             const det = pre.missingDetailed || {};
             const refreshInfo = getRefreshPayload(table.rows, user, phone, scanTime);
-            const needScanDataRefresh = !!pre.transmissionId && refreshInfo.canRefresh;
+            const needScanDataRefresh = !!pre.transmissionId && refreshInfo.canRefresh && !isRefreshApplied(pre.transmissionId, refreshInfo.signature);
             const lackBase = describeMissing(pre);
             const lack = needScanDataRefresh
               ? (lackBase === 'inget' ? 'scanDataRefresh' : `${lackBase}, scanDataRefresh`)
@@ -980,7 +1022,7 @@
             });
             const det = pre.missingDetailed || {};
             const refreshInfo = getRefreshPayload(table.rows, user, phone, scanTime);
-            const needScanDataRefresh = !!pre.transmissionId && refreshInfo.canRefresh;
+            const needScanDataRefresh = !!pre.transmissionId && refreshInfo.canRefresh && !isRefreshApplied(pre.transmissionId, refreshInfo.signature);
             const needFeet = needsFeetRefresh(det);
             const needReport = !!(det.report ?? pre.missing?.report);
             const needModelL = !!(det.modelL ?? pre.missing?.modelL);
@@ -1001,7 +1043,7 @@
             logLine(`Transmission (befintlig): ${tx} [${dirName}]`);
 
             // Säkerställ att indexdata/scanData följer med varje vald transmission
-            await refreshFeetdataAndScanData({
+            const refreshApplied = await refreshFeetdataAndScanData({
               baseUrl,
               scannerId: sid,
               transmissionId: tx,
@@ -1011,6 +1053,9 @@
               csvRows: table.rows,
               dirName,
             });
+            if (needScanDataRefresh && refreshApplied) {
+              markRefreshApplied(tx, refreshInfo.signature);
+            }
 
             // UPLOAD filer
             const isLeft = (n) => /(^|[_-])l(\.|$)|(^|[_-])left(\b|_)/i.test(String(n||'').toLowerCase());
@@ -1149,7 +1194,7 @@
               const miss = pre.missing || {};
               const det = pre.missingDetailed || {};
               const refreshInfo = getRefreshPayload(filteredRows, user, phone, scanTime);
-              const needScanDataRefresh = !!pre.transmissionId && refreshInfo.canRefresh;
+              const needScanDataRefresh = !!pre.transmissionId && refreshInfo.canRefresh && !isRefreshApplied(pre.transmissionId, refreshInfo.signature);
               const lackBase = describeMissing(pre);
               const lack = needScanDataRefresh
                 ? (lackBase === 'inget' ? 'scanDataRefresh' : `${lackBase}, scanDataRefresh`)
@@ -1175,7 +1220,7 @@
               logLine(`Transmission (befintlig): ${tx} [${dirName}]`);
 
               // Säkerställ att indexdata/scanData följer med varje vald transmission
-              await refreshFeetdataAndScanData({
+              const refreshApplied = await refreshFeetdataAndScanData({
                 baseUrl,
                 scannerId: sid,
                 transmissionId: tx,
@@ -1185,6 +1230,9 @@
                 csvRows: filteredRows,
                 dirName,
               });
+              if (needScanDataRefresh && refreshApplied) {
+                markRefreshApplied(tx, refreshInfo.signature);
+              }
 
               // UPLOAD
               const isLeft = (n) => /(^|[_-])l(\.|$)|(^|[_-])left(\b|_)/i.test(String(n||'').toLowerCase());

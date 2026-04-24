@@ -322,6 +322,21 @@
         }
         return out;
       }
+      function directoryExists(value) {
+        const normalized = normalizeFsPath(value);
+        if (!normalized) return false;
+        try {
+          if (window.uploader.exists(normalized)) return true;
+        } catch {}
+        const parent = parentPath(normalized);
+        if (!parent || parent === normalized) return false;
+        try {
+          const targetName = pathLeafName(normalized).toLowerCase();
+          return window.uploader.listDir(parent).some((entry) => entry.isDir && String(entry.name || '').toLowerCase() === targetName);
+        } catch {
+          return false;
+        }
+      }
       function addUniquePath(list, seen, value) {
         const normalized = normalizeFsPath(value);
         if (!normalized) return;
@@ -382,7 +397,7 @@
       function resolveDayFolder(rootHint, d) {
         const candidates = buildDayFolderCandidates(rootHint, d);
         for (const candidate of candidates) {
-          if (window.uploader.exists(candidate)) return candidate;
+          if (directoryExists(candidate)) return candidate;
         }
         return candidates[0] || '';
       }
@@ -894,7 +909,7 @@
       });
       document.getElementById('btnSelectToday').addEventListener('click', () => {
         const todayPath = dayFolder(getRootDirValue(), new Date());
-        if (todayPath && window.uploader.exists(todayPath)) {
+        if (todayPath && directoryExists(todayPath)) {
           setSelectedDirPaths([todayPath], { log: true });
           return;
         }
@@ -1419,17 +1434,11 @@
         if (!ok) { logLine('Avbryter – kan inte nå servern.'); return; }
 
         const table = parseCsvTable(csvText);
-        // Datumfilter: idag + ev. gårdag
+        if (table.rows.length === 0) { logLine('CSV-filen innehåller inga rader.'); return; }
         const today = new Date();
-        const yday = new Date(today); yday.setDate(today.getDate()-1);
-        const dayKeys = new Set([dayKeyFromDate(today)]);
-        if (includeYesterday) dayKeys.add(dayKeyFromDate(yday));
-        const filteredRows = table.rows.filter(r => {
-          if (r.scanDayKey && dayKeys.has(r.scanDayKey)) return true;
-          if (!r.scanTime) return false;
-          return dayKeys.has(dayKeyFromDate(r.scanTime));
-        });
-        if (filteredRows.length === 0) { logLine('Inga CSV-rader för idag/gårdag.'); return; }
+        // Återanvänd samma fulla CSV-tabell som torrkörningen och låt matchningen ske per dagsmapp.
+        // Det är robustare än ett separat auto-filter på CSV-datum.
+        const csvRows = table.rows;
 
         const days = [today];
         if (includeYesterday) { const y = new Date(today); y.setDate(today.getDate()-1); days.unshift(y); }
@@ -1437,10 +1446,9 @@
         // Iterate days → subfolders
         for (const d of days) {
           const dPath = dayFolder(root, d);
-          if (!window.uploader.exists(dPath)) { logLine(`Ingen dagmapp: ${dPath}`); continue; }
+          if (!directoryExists(dPath)) { logLine(`Ingen dagmapp: ${dPath}`); continue; }
           logLine(`Skannar ${dPath}…`);
           const sub = window.uploader.listDir(dPath).filter(e => e.isDir);
-          let csvIndex = 0;
 
           for (const dirEntry of sub) {
             try {
@@ -1463,7 +1471,7 @@
               const phone   = (parts[0] && /[0-9+]/.test(parts[0][0])) ? parts[0] : '';
               const user    = phone ? parts.slice(1).join(' ') : dirName;
               const folderScanTime = new Date(Math.max(...items.map(i => i.mtimeMs))).toISOString();
-              const scanContext = resolveScanContext(filteredRows, user, phone, folderScanTime);
+              const scanContext = resolveScanContext(csvRows, user, phone, folderScanTime);
               const scanTime = scanContext.scanTime;
               if (scanContext.scanTimeSource === 'csv' && scanTime !== folderScanTime) {
                 logLine(`[${dirName}] använder CSV ScanTime i preflight: ${scanTime} (lokal filtidsfallback: ${folderScanTime})`);
@@ -1507,7 +1515,7 @@
                   user,
                   phone,
                   scanTime,
-                  csvRows: filteredRows,
+                  csvRows,
                   dirName,
                 });
               }

@@ -374,3 +374,30 @@ ipcMain.handle('pick-csv', async (_e, defaultPath) => {
   }
 });
 
+ipcMain.handle('pick-directories', async (_e, defaultPath) => {
+  try {
+    const res = await dialog.showOpenDialog({
+      title: 'Välj dagsmapp',
+      defaultPath: defaultPath || 'D:\\',
+      properties: ['openDirectory', 'multiSelections']
+    });
+    if (res.canceled || !res.filePaths?.length) return [];
+    return res.filePaths;
+  } catch {
+    return [];
+  }
+});
+
+ipcMain.handle('pick-directory', async (_e, defaultPath, title) => {
+  try {
+    const res = await dialog.showOpenDialog({
+      title: title || 'Välj mapp',
+      defaultPath: defaultPath || 'D:\\',
+      properties: ['openDirectory']
+    });
+    if (res.canceled || !res.filePaths?.length) return null;
+    return res.filePaths[0];
+  } catch {
+    return null;
+  }
+});

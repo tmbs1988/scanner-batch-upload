@@ -122,6 +122,7 @@
             <label>Välj dagsmapp (använd Ctrl för flera)</label>
             <input id="dirInput" type="file" webkitdirectory directory multiple />
             <div class="actions" style="margin-top:8px">
+              <button id="btnPickDayDirs" class="secondary">Välj mappar...</button>
               <button id="btnSelectToday" class="secondary">Välj idag</button>
             </div>
             <div class="small" id="dirPickedPath">Ingen dagsmapp vald ännu.</div>
@@ -156,7 +157,10 @@
         <div class="row">
           <div>
             <label>Rotmapp</label>
-            <input id="rootDir" type="text" value="D:\LFS350" placeholder="D:\LFS350" />
+            <div class="row" style="grid-template-columns: 1fr auto;">
+              <input id="rootDir" type="text" value="D:\LFS350" placeholder="D:\LFS350" />
+              <button id="btnPickRootDir" class="secondary">Bläddra...</button>
+            </div>
             <div class="small">Sökvägsstruktur: \YYYY\MM\DD\<telefon_namn></div>
           </div>
           <div>
@@ -348,6 +352,32 @@
         add('D:\\database\\feetbase.csv');
         return candidates;
       }
+      function buildDayFolderCandidates(rootHint, d) {
+        const candidates = [];
+        const seen = new Set();
+        const add = (value) => addUniquePath(candidates, seen, value);
+        const y = d.getFullYear();
+        const m = pad2(d.getMonth()+1);
+        const dd = pad2(d.getDate());
+        const compact = `${y}${m}${dd}`;
+        const roots = getPathAncestors(rootHint || getRootDirValue());
+        for (const base of roots) {
+          add(window.uploader.pathJoin(base, String(y), m, dd));
+          add(window.uploader.pathJoin(base, compact));
+          add(window.uploader.pathJoin(base, 'scanner_data', String(y), m, dd));
+          add(window.uploader.pathJoin(base, 'scanner_data', compact));
+          add(window.uploader.pathJoin(base, 'data', String(y), m, dd));
+          add(window.uploader.pathJoin(base, 'data', compact));
+        }
+        return candidates;
+      }
+      function resolveDayFolder(rootHint, d) {
+        const candidates = buildDayFolderCandidates(rootHint, d);
+        for (const candidate of candidates) {
+          if (window.uploader.exists(candidate)) return candidate;
+        }
+        return candidates[0] || '';
+      }
       function resolveCsvPath(rootHint) {
         const candidates = buildCsvCandidatePaths(rootHint);
         for (const candidate of candidates) {
@@ -408,6 +438,11 @@
           return;
         }
         dirPickedPathEl.textContent = 'Ingen dagsmapp vald ännu.';
+      }
+      async function pickDayDirectories(defaultPath) {
+        if (!window.uploader?.pickDirectories) return [];
+        const picked = await window.uploader.pickDirectories(defaultPath || getRootDirValue());
+        return Array.isArray(picked) ? picked.map(normalizeFsPath).filter(Boolean) : [];
       }
       function whitelistPaths(dirPaths) {
         const result = [];
@@ -488,6 +523,15 @@
         rootDirEl.value = normalized;
         try { localStorage.setItem(ROOT_DIR_KEY, normalized); } catch {}
         refreshSelectedCsvPath(normalized);
+      });
+      document.getElementById('btnPickRootDir').addEventListener('click', async () => {
+        const picked = await window.uploader.pickDirectory(getRootDirValue(), 'Välj rotmapp');
+        if (!picked) return;
+        const normalized = normalizeFsPath(picked);
+        rootDirEl.value = normalized;
+        try { localStorage.setItem(ROOT_DIR_KEY, normalized); } catch {}
+        refreshSelectedCsvPath(normalized, { log: true });
+        logLine(`Vald rotmapp: ${normalized}`);
       });
       csvInputEl.addEventListener('change', () => {
         if (csvInputEl.files?.length) {
@@ -807,24 +851,29 @@
       }
       function pad2(n){ return String(n).padStart(2, '0'); }
       function dayFolder(root, d) {
-        const y = d.getFullYear();
-        const m = pad2(d.getMonth()+1);
-        const dd = pad2(d.getDate());
-        const a = window.uploader.pathJoin(root, String(y), m, dd);           // \YYYY\MM\DD
-        const b = window.uploader.pathJoin(root, `${y}${m}${dd}`);            // \YYYYMMDD
-        try {
-          if (window.uploader.exists(a)) return a;
-          if (window.uploader.exists(b)) return b;
-        } catch {}
-        return a; // fallback
+        return resolveDayFolder(root, d);
       }
-      document.getElementById('btnSelectToday').addEventListener('click', () => {
-        const todayPath = dayFolder(getRootDirValue(), new Date());
-        if (!window.uploader.exists(todayPath)) {
-          logLine(`Hittar inte dagens dagsmapp: ${todayPath}`);
+      document.getElementById('btnPickDayDirs').addEventListener('click', async () => {
+        const picked = await pickDayDirectories(resolveDayFolder(getRootDirValue(), new Date()) || getRootDirValue());
+        if (!picked.length) {
+          logLine('Mappval avbröts.');
           return;
         }
-        setSelectedDirPaths([todayPath], { log: true });
+        setSelectedDirPaths(picked, { log: true });
+      });
+      document.getElementById('btnSelectToday').addEventListener('click', () => {
+        const todayPath = dayFolder(getRootDirValue(), new Date());
+        if (todayPath && window.uploader.exists(todayPath)) {
+          setSelectedDirPaths([todayPath], { log: true });
+          return;
+        }
+        logLine(`Hittar inte dagens dagsmapp automatiskt. Öppnar mappväljaren i stället.`);
+        pickDayDirectories(parentPath(todayPath) || getRootDirValue())
+          .then((picked) => {
+            if (!picked.length) return;
+            setSelectedDirPaths(picked, { log: true });
+          })
+          .catch(() => {});
       });
 
       function base64ToBytes(b64) {

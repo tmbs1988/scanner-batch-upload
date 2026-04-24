@@ -88,6 +88,22 @@ contextBridge.exposeInMainWorld('uploader', {
       return null;
     }
   },
+  pickDirectories: async (defaultPath) => {
+    try {
+      const paths = await ipcRenderer.invoke('pick-directories', defaultPath);
+      return Array.isArray(paths) ? paths : [];
+    } catch {
+      return [];
+    }
+  },
+  pickDirectory: async (defaultPath, title = 'Välj mapp') => {
+    try {
+      const p = await ipcRenderer.invoke('pick-directory', defaultPath, title);
+      return p || null;
+    } catch {
+      return null;
+    }
+  },
 });
 
 

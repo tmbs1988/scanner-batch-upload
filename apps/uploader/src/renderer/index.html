@@ -361,10 +361,22 @@
       }
 
       function parseCsvLines(text) { return text.split(/\r?\n/).map(l => l.trim()).filter(Boolean); }
+      function detectCsvDelimiter(row) {
+        const sample = String(row || '');
+        const counts = {
+          comma: (sample.match(/,/g) || []).length,
+          semicolon: (sample.match(/;/g) || []).length,
+          tab: (sample.match(/\t/g) || []).length,
+        };
+        if (counts.semicolon > counts.comma && counts.semicolon >= counts.tab) return ';';
+        if (counts.tab > counts.comma && counts.tab > counts.semicolon) return '\t';
+        return ',';
+      }
       function parseCsvTable(text) {
         const rows = text.split(/\r?\n/).filter(r => r.trim().length > 0);
         if (rows.length === 0) return { header: [], rows: [] };
-        const split = (row) => row.split(/[;,:\t]+/).map(s => s.trim());
+        const delimiter = detectCsvDelimiter(rows[0]);
+        const split = (row) => String(row || '').split(delimiter).map(s => s.trim());
         const header = split(rows[0]);
         const out = [];
         for (let i = 1; i < rows.length; i++) {
@@ -447,7 +459,8 @@
       }
       function extractStoreNameFromCsv(text) {
         const rows = parseCsvLines(text).filter(Boolean);
-        const splitRow = (row) => row.split(/[;,:\t]+/).map(s => s.trim());
+        const delimiter = detectCsvDelimiter(rows[0] || '');
+        const splitRow = (row) => String(row || '').split(delimiter).map(s => s.trim());
         // 1) Hitta första header-rad som innehåller exakt "store_name"
         let headerIdx = -1;
         let storeCol = -1;

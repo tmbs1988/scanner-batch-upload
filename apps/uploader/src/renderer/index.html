@@ -968,6 +968,15 @@
           throw new Error(`${putRes.status} ${t.slice(0, 300)}`);
         }
       }
+      async function uploadPathViaSigned(baseUrl, scannerId, transmissionId, name, contentType, filePath) {
+        const meta = await postJson(`${baseUrl}/api/scanners/request-upload`, {
+          scannerId, transmissionId, filename: name, contentType, size: 0
+        });
+        const res = await window.uploader.putFileToUrl(meta.putUrl, contentType, filePath);
+        if (!res?.ok) {
+          throw new Error(`${res?.status || 0} ${res?.error || 'upload failed'}`.trim());
+        }
+      }
 
       function guessContentTypeByName(name) {
         const lower = String(name || '').toLowerCase();
@@ -1371,10 +1380,14 @@
               if (kind === 'report' && !needReport) continue;
               if (kind === 'modelL' && !needModelL) continue;
               if (kind === 'modelR' && !needModelR) continue;
-              const base64 = await readWhitelistedItemBase64(item);
               const contentType = getWhitelistedItemContentType(item, name);
               try {
-                await uploadViaSigned(baseUrl, sid, tx, name, contentType, base64);
+                if (item?.path) {
+                  await uploadPathViaSigned(baseUrl, sid, tx, name, contentType, item.path);
+                } else {
+                  const base64 = await readWhitelistedItemBase64(item);
+                  await uploadViaSigned(baseUrl, sid, tx, name, contentType, base64);
+                }
                 logLine(`Uppladdad: ${name}`);
               } catch (e) {
                 logLine(`[${dir}] Uppladdning misslyckades: ${name} — ${e?.message || e}`);

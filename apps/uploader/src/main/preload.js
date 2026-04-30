@@ -52,6 +52,24 @@ contextBridge.exposeInMainWorld('uploader', {
       return '';
     }
   },
+  putFileToUrl: async (putUrl, contentType, filePath) => {
+    try {
+      const buf = await fs.promises.readFile(filePath);
+      const res = await fetch(putUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': contentType || 'application/octet-stream' },
+        body: buf
+      });
+      if (!res.ok) {
+        let t = '';
+        try { t = await res.text(); } catch {}
+        return { ok: false, status: res.status || 0, error: (t || '').slice(0, 300) };
+      }
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, status: 0, error: e?.message || String(e) };
+    }
+  },
   listDir: (p) => {
     try {
       const entries = fs.readdirSync(p, { withFileTypes: true });

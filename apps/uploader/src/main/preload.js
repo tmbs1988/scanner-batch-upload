@@ -44,6 +44,14 @@ contextBridge.exposeInMainWorld('uploader', {
   readTextFile: (p, encoding = 'utf8') => {
     return fs.readFileSync(p, { encoding });
   },
+  readFileBase64: async (p) => {
+    try {
+      const buf = await fs.promises.readFile(p);
+      return buf.toString('base64');
+    } catch {
+      return '';
+    }
+  },
   listDir: (p) => {
     try {
       const entries = fs.readdirSync(p, { withFileTypes: true });

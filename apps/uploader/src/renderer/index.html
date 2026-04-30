@@ -508,7 +508,7 @@
       }
       async function readWhitelistedItemBase64(item) {
         if (item?.file) return fileToBase64(item.file);
-        if (item?.path) return window.uploader.readTextFile(item.path, 'base64');
+        if (item?.path) return window.uploader.readFileBase64(item.path);
         return '';
       }
       function getWhitelistedItemContentType(item, name) {
@@ -1535,8 +1535,7 @@
               const isRight = (n) => /(^|[_-])r(\.|$)|(^|[_-])right(\b|_)/i.test(String(n||'').toLowerCase());
               for (const item of items) {
                 // Read file as base64 via Node fs
-                // Small helper through DataURL prefix
-                const binary = window.uploader.readTextFile(item.path, 'base64');
+                const binary = await window.uploader.readFileBase64(item.path);
                 const kind = (() => {
                   const n = item.name.toLowerCase();
                   if (n.endsWith('.pdf')) return 'report';

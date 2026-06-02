@@ -1,3 +1,9 @@
+## 0.1.60 (2026-06-02)
+- Fix: återinfört init av transmission när preflight (`checkOnly`) inte hittar befintlig post.
+- Ny patient/skanning: `upload-manual-file` init skapar eller matchar transmission, därefter upload + finalize + `process-transmission` (skapar patient vid behov).
+- Befintlig transmission: oförändrat – uppdaterar endast saknade delar.
+- Torrkörning visar nu om transmission är befintlig eller skapas vid uppladdning.
+
 ## 0.1.42 (2025-12-30)
 - Fix: standardvägar och escaping uppdaterade till `D:\LFS350\...`.
 - Auto-läge: söker dagmappar i både `\YYYY\MM\DD` och `\YYYYMMDD` under `D:\LFS350`.

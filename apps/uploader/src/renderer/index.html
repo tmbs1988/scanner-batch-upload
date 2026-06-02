@@ -631,6 +631,7 @@
                   <div><b>${f.dir}</b></div>
                   <div class="small">patient=${f.user} | phone=${f.phone} | scanTime=${f.scanTime}</div>
                   <div class="small">saknar: ${f.lack || 'inget'}</div>
+                  <div class="small">transmission: ${f.transmissionLabel || '—'}</div>
                 </span>
               </label>
             `;
@@ -1178,6 +1179,33 @@
         };
       }
 
+      /** Preflight is checkOnly; init creates or finds transmission when none exists yet. */
+      async function resolveTransmissionForUpload({ baseUrl, store, user, phone, scanTime, csvRows, dirName, preflight }) {
+        let transmissionId = preflight?.transmissionId || null;
+        let scannerId = preflight?.scannerId || null;
+        if (transmissionId && scannerId) {
+          return { transmissionId, scannerId, source: 'existing' };
+        }
+        logLine(`[${dirName}] Ingen transmission i preflight – init (skapa/hitta)…`);
+        const refreshInfo = getRefreshPayload(csvRows, user, phone, scanTime);
+        const initBody = { store_name: store, user_name: user, phone, scanTime };
+        if (refreshInfo.hasCsvPayload) initBody.csvText = refreshInfo.csvPayload;
+        const init = await postJson(`${baseUrl}/api/scanners/upload-manual-file`, initBody);
+        transmissionId = init.transmissionId || null;
+        scannerId = init.scannerId || null;
+        if (!transmissionId || !scannerId) {
+          throw new Error('Kunde inte skapa eller hitta transmission');
+        }
+        logLine(`[${dirName}] Transmission (init): ${transmissionId}`);
+        return { transmissionId, scannerId, source: 'init' };
+      }
+
+      function transmissionLabelForDryRun(preflight, need) {
+        if (preflight?.transmissionId) return 'befintlig transmission';
+        if (need) return 'ny – init skapar transmission vid uppladdning';
+        return 'ingen transmission';
+      }
+
       document.getElementById('btnDryRun').addEventListener('click', async () => {
         const manualItems = getSelectedManualItems();
         if (!manualItems.length) { logLine('Välj en dagsmapp först.'); return; }
@@ -1268,6 +1296,7 @@
               key: `${dir}|${phone}|${scanTime}`,
               dir: dirName, user, phone, scanTime,
               transmissionId: pre.transmissionId || null,
+              transmissionLabel: transmissionLabelForDryRun(pre, need),
               lack, need
             });
           } catch (e) {
@@ -1350,11 +1379,18 @@
               continue;
             }
 
-            // Använd alltid befintlig transmission – skapa aldrig ny här
-            const tx  = pre.transmissionId;
-            const sid = pre.scannerId || pre.scannerId;
-            if (!tx || !sid) { logLine(`[${dirName}] Ingen befintlig transmission – hoppar över.`); continue; }
-            logLine(`Transmission (befintlig): ${tx} [${dirName}]`);
+            let txCtx;
+            try {
+              txCtx = await resolveTransmissionForUpload({
+                baseUrl, store, user, phone, scanTime, csvRows: table.rows, dirName, preflight: pre
+              });
+            } catch (e) {
+              logLine(`[${dirName}] Init transmission misslyckades: ${e?.message || e}`);
+              continue;
+            }
+            const tx = txCtx.transmissionId;
+            const sid = txCtx.scannerId;
+            if (txCtx.source === 'existing') logLine(`Transmission (befintlig): ${tx} [${dirName}]`);
 
             // Säkerställ att indexdata/scanData följer med varje vald transmission
             if (shouldRefreshScanData) {
@@ -1523,11 +1559,18 @@
                 continue;
               }
 
-              // Använd befintlig transmission – skapa aldrig ny här
-              const tx  = pre.transmissionId;
-              const sid = pre.scannerId || pre.scannerId;
-              if (!tx || !sid) { logLine(`[${dirName}] Ingen befintlig transmission – hoppar över.`); continue; }
-              logLine(`Transmission (befintlig): ${tx} [${dirName}]`);
+              let txCtx;
+              try {
+                txCtx = await resolveTransmissionForUpload({
+                  baseUrl, store, user, phone, scanTime, csvRows, dirName, preflight: pre
+                });
+              } catch (e) {
+                logLine(`[${dirName}] Init transmission misslyckades: ${e?.message || e}`);
+                continue;
+              }
+              const tx = txCtx.transmissionId;
+              const sid = txCtx.scannerId;
+              if (txCtx.source === 'existing') logLine(`Transmission (befintlig): ${tx} [${dirName}]`);
 
               // Säkerställ att indexdata/scanData följer med varje vald transmission
               if (shouldRefreshScanData) {

@@ -719,6 +719,53 @@
           .replace(/\s+/g, ' ')
           .trim();
       }
+      function standardizePhone(phone) {
+        return String(phone || '').replace(/[\s\-()+]/g, '');
+      }
+      function generatePhonePatterns(phone) {
+        if (!phone) return [];
+        const standardized = standardizePhone(phone);
+        if (!standardized) return [];
+        const patterns = [standardized, String(phone).trim()];
+        if (standardized.startsWith('07') && standardized.length >= 10) {
+          patterns.push('0046' + standardized.substring(1), '46' + standardized.substring(1));
+        }
+        if (standardized.startsWith('0046') && standardized.length >= 11) {
+          patterns.push('0' + standardized.substring(4));
+        }
+        if (standardized.startsWith('46') && standardized.length >= 10) {
+          patterns.push('0' + standardized.substring(2));
+        }
+        return Array.from(new Set(patterns.filter(Boolean)));
+      }
+      function phoneMatches(a, b) {
+        const na = standardizePhone(a);
+        const nb = standardizePhone(b);
+        if (!na || !nb) return false;
+        if (na === nb) return true;
+        const pa = generatePhonePatterns(a);
+        const pb = generatePhonePatterns(b);
+        return pa.some((p) => pb.includes(p));
+      }
+      function nameMatchesPartial(dirUser, csvUser) {
+        const d = normalizeName(dirUser);
+        const c = normalizeName(csvUser);
+        if (!d || !c) return false;
+        if (d === c) return true;
+        const dWords = d.split(/\s+/).filter(Boolean);
+        const cWords = c.split(/\s+/).filter(Boolean);
+        if (dWords.some((w) => cWords.includes(w))) return true;
+        if (cWords.some((w) => dWords.includes(w))) return true;
+        return c.includes(d) || d.includes(c);
+      }
+      function scoreNameMatch(dirUser, csvUser) {
+        const normDir = normalizeName(dirUser);
+        const normCsv = normalizeName(csvUser);
+        if (!normDir || !normCsv) return 0;
+        if (normDir === normCsv) return 60;
+        if (nameMatchesPartial(dirUser, csvUser)) return 45;
+        return 0;
+      }
       function timeDiffMinutes(a, b) {
         if (!(a instanceof Date) || !(b instanceof Date)) return Number.POSITIVE_INFINITY;
         return Math.abs((a.getTime() - b.getTime()) / 60000);
@@ -735,8 +782,8 @@
           const footTok = (r.obj['foot_type'] || r.obj['foot'] || '').toString().toUpperCase();
           const side = footTok === 'L' || footTok === 'LEFT' ? 'L' : (footTok === 'R' || footTok === 'RIGHT' ? 'R' : '');
           if (!side) continue;
-          const scorePhone = (dirPhone && phone && phone === dirPhone) ? 100 : 0;
-          const scoreName  = (normUser && normalizeName(uname) === normUser) ? 60 : 0;
+          const scorePhone = (dirPhone && phone && phoneMatches(dirPhone, phone)) ? 100 : 0;
+          const scoreName  = scoreNameMatch(dirUser, uname);
           const tdiff = r.scanTime ? timeDiffMinutes(r.scanTime, folderTime) : Number.POSITIVE_INFINITY;
           const scoreTime  = isFinite(tdiff) ? Math.max(0, windowMinutes - tdiff) : 0;
           const totalScore = scorePhone + scoreName + scoreTime;
@@ -772,6 +819,101 @@
           scanTimeSource: chosen.source,
           folderScanTime: folderScanTimeIso,
         };
+      }
+      /** Resolve canonical patient identity: folder name + CSV (phone/full name). */
+      function resolveScanFolderIdentity(csvRows, dirName, folderScanTimeIso) {
+        const { phone: folderPhone, user: folderUser } = parseFolderName(dirName);
+        const scanContext = resolveScanContext(csvRows, folderUser, folderPhone, folderScanTimeIso);
+        const match = scanContext.refreshInfo.match;
+        const csvUser = String(match.leftMatch?.obj?.user_name || match.rightMatch?.obj?.user_name || '').trim();
+        const csvPhone = String(match.leftMatch?.obj?.phone || match.rightMatch?.obj?.phone || '').trim();
+        let user = folderUser;
+        let phone = folderPhone;
+        const notes = [];
+        const csvPhoneMatches = csvPhone && (phoneMatches(folderPhone, csvPhone) || phoneMatches(phone, csvPhone));
+        if (csvPhone && (!phone || csvPhoneMatches)) {
+          if (phone && csvPhone !== phone && !phoneMatches(phone, csvPhone)) notes.push('telefon från CSV');
+          phone = csvPhone;
+        }
+        if (csvUser) {
+          if (!user || user !== csvUser) {
+            if (nameMatchesPartial(folderUser, csvUser) || csvPhoneMatches) {
+              notes.push(`namn från CSV (${csvUser})`);
+              user = csvUser;
+            }
+          }
+        }
+        return {
+          dirName,
+          folderUser,
+          folderPhone,
+          user,
+          phone,
+          scanTime: scanContext.scanTime,
+          scanContext,
+          identityNote: notes.length ? notes.join('; ') : null,
+        };
+      }
+      function buildFolderSelectionKey(dir, identity) {
+        return `${dir}|${identity.phone}|${identity.scanTime}`;
+      }
+      function evaluateUploadNeeds(pre, scanContext) {
+        const det = pre?.missingDetailed || {};
+        const miss = pre?.missing || {};
+        const lack = describeMissing(pre);
+        if (pre?.complete === true || (pre?.transmissionId && lack === 'inget')) {
+          return {
+            need: false,
+            lack: 'inget',
+            needFeet: false,
+            shouldRefreshScanData: false,
+            needReport: false,
+            needModelL: false,
+            needModelR: false,
+            needArchL: false,
+            needArchR: false,
+            needFoot3dL: false,
+            needFoot3dR: false,
+          };
+        }
+        const refreshInfo = scanContext?.refreshInfo || {};
+        const needFeet = needsFeetRefresh(det);
+        const shouldRefreshScanData = needFeet && refreshInfo.canRefresh;
+        const needReport = !!(det.report ?? miss.report);
+        const needModelL = !!(det.modelL ?? miss.modelL);
+        const needModelR = !!(det.modelR ?? miss.modelR);
+        const needArchL = !!det.archL;
+        const needArchR = !!det.archR;
+        const needFoot3dL = !!det.foot3dL;
+        const needFoot3dR = !!det.foot3dR;
+        const need = shouldRefreshScanData || needFeet || needReport || needModelL || needModelR || needArchL || needArchR || needFoot3dL || needFoot3dR;
+        return {
+          need,
+          lack,
+          needFeet,
+          shouldRefreshScanData,
+          needReport,
+          needModelL,
+          needModelR,
+          needArchL,
+          needArchR,
+          needFoot3dL,
+          needFoot3dR,
+        };
+      }
+      async function runScanPreflight(baseUrl, store, identity) {
+        return postJson(`${baseUrl}/api/scanners/upload-manual-file`, {
+          checkOnly: true,
+          store_name: store,
+          user_name: identity.user,
+          phone: identity.phone,
+          scanTime: identity.scanTime,
+        });
+      }
+      function logIdentityResolution(dir, identity) {
+        if (identity.identityNote) {
+          logLine(`[${dir}] identitet: mapp "${identity.folderUser || '—'}" → "${identity.user}" (${identity.identityNote})`);
+        }
       }
       function extractStoreNameFromCsv(text) {
         const rows = parseCsvLines(text).filter(Boolean);
@@ -1264,40 +1406,28 @@
           logLine(`[${dir}] lokalt: report=${report}, models=${models}, images=${imgs}`);
           try {
             const dirName = (dir.split('/').pop() || '').trim();
-            const { phone, user } = parseFolderName(dirName);
             const folderScanTime = new Date(Math.max(...items.map(getItemModifiedMs))).toISOString();
-            const scanContext = resolveScanContext(table.rows, user, phone, folderScanTime);
-            const scanTime = scanContext.scanTime;
+            const identity = resolveScanFolderIdentity(table.rows, dirName, folderScanTime);
+            logIdentityResolution(dir, identity);
+            const { user, phone, scanTime, scanContext } = identity;
             if (scanContext.scanTimeSource === 'csv' && scanTime !== folderScanTime) {
               logLine(`[${dir}] använder CSV ScanTime i preflight: ${scanTime} (lokal filtidsfallback: ${folderScanTime})`);
             }
-            const pre = await postJson(`${baseUrl}/api/scanners/upload-manual-file`, { checkOnly: true, store_name: store, user_name: user, phone, scanTime });
+            const pre = await runScanPreflight(baseUrl, store, identity);
             const miss = pre.missing || {};
             if (pre.transmissionId) {
               const matched = pre.matched || 'exact';
               const mf = pre.matchedFields || {};
               logLine(`[${dir}] match: tx=${pre.transmissionId}, mode=${matched}, phoneMatch=${mf.phoneMatched?'ja':'nej'}, nameMatch=${mf.userMatched?'ja':'nej'}`);
             }
-            const det = pre.missingDetailed || {};
-            const refreshInfo = scanContext.refreshInfo;
-            const needFeet = needsFeetRefresh(det);
-            const shouldRefreshScanData = needFeet && refreshInfo.canRefresh;
-            const lack = describeMissing(pre);
-            logLine(`[${dir}] i huvudapp: complete=${pre.complete ? 'ja' : 'nej'}, saknar: ${lack}`);
-            const needReport = !!(det.report ?? miss.report);
-            const needModelL = !!(det.modelL ?? miss.modelL);
-            const needModelR = !!(det.modelR ?? miss.modelR);
-            const needArchL = !!det.archL;
-            const needArchR = !!det.archR;
-            const needFoot3dL = !!det.foot3dL;
-            const needFoot3dR = !!det.foot3dR;
-            const need = shouldRefreshScanData || needFeet || needReport || needModelL || needModelR || needArchL || needArchR || needFoot3dL || needFoot3dR;
+            const needs = evaluateUploadNeeds(pre, scanContext);
+            logLine(`[${dir}] i huvudapp: complete=${pre.complete ? 'ja' : 'nej'}, saknar: ${needs.lack}`);
             dryRunFindings.push({
-              key: `${dir}|${phone}|${scanTime}`,
+              key: buildFolderSelectionKey(dir, identity),
               dir: dirName, user, phone, scanTime,
               transmissionId: pre.transmissionId || null,
-              transmissionLabel: transmissionLabelForDryRun(pre, need),
-              lack, need
+              transmissionLabel: transmissionLabelForDryRun(pre, needs.need),
+              lack: needs.lack, need: needs.need
             });
           } catch (e) {
             logLine(`[${dir}] preflight-fel: ${e.message || e}`);
@@ -1338,11 +1468,9 @@
           // Begränsa till urval från torrkörningen om sådant finns
           if (dryRunSelectedKeys && dryRunSelectedKeys.size > 0) {
             const dirName = (dir.split('/').pop() || '').trim();
-            const { phone, user } = parseFolderName(dirName);
             const folderScanTimeKey = new Date(Math.max(...items.map(getItemModifiedMs))).toISOString();
-            const scanContextKey = resolveScanContext(table.rows, user, phone, folderScanTimeKey);
-            const scanTimeKey = scanContextKey.scanTime;
-            const key = `${dir}|${phone}|${scanTimeKey}`;
+            const identityKey = resolveScanFolderIdentity(table.rows, dirName, folderScanTimeKey);
+            const key = buildFolderSelectionKey(dir, identityKey);
             if (!dryRunSelectedKeys.has(key)) {
               logLine(`Hoppar över (ej vald i torrkörning): ${dir}`);
               continue;
@@ -1351,33 +1479,22 @@
           try {
             logLine(`Bearbetar ${dir}…`);
             const dirName = (dir.split('/').pop() || '').trim();
-            const { phone, user } = parseFolderName(dirName);
             const folderScanTime = new Date(Math.max(...items.map(getItemModifiedMs))).toISOString();
-            const scanContext = resolveScanContext(table.rows, user, phone, folderScanTime);
-            const scanTime = scanContext.scanTime;
+            const identity = resolveScanFolderIdentity(table.rows, dirName, folderScanTime);
+            logIdentityResolution(dir, identity);
+            const { user, phone, scanTime, scanContext } = identity;
             if (scanContext.scanTimeSource === 'csv' && scanTime !== folderScanTime) {
               logLine(`[${dirName}] använder CSV ScanTime i preflight: ${scanTime} (lokal filtidsfallback: ${folderScanTime})`);
             }
 
             // Preflight: checkOnly
-            const pre = await postJson(`${baseUrl}/api/scanners/upload-manual-file`, {
-              checkOnly: true, store_name: store, user_name: user, phone, scanTime
-            });
-            const det = pre.missingDetailed || {};
-            const refreshInfo = scanContext.refreshInfo;
-            const needFeet = needsFeetRefresh(det);
-            const shouldRefreshScanData = needFeet && refreshInfo.canRefresh;
-            const needReport = !!(det.report ?? pre.missing?.report);
-            const needModelL = !!(det.modelL ?? pre.missing?.modelL);
-            const needModelR = !!(det.modelR ?? pre.missing?.modelR);
-            const needArchL = !!det.archL;
-            const needArchR = !!det.archR;
-            const needFoot3dL = !!det.foot3dL;
-            const needFoot3dR = !!det.foot3dR;
-            if (!shouldRefreshScanData && !needFeet && !needReport && !needModelL && !needModelR && !needArchL && !needArchR && !needFoot3dL && !needFoot3dR) {
+            const pre = await runScanPreflight(baseUrl, store, identity);
+            const needs = evaluateUploadNeeds(pre, scanContext);
+            if (!needs.need) {
               logLine(`[${dirName}] Komplett i huvudappen – hoppar över.`);
               continue;
             }
+            logLine(`[${dirName}] saknar: ${needs.lack}`);
 
             let txCtx;
             try {
@@ -1393,7 +1510,7 @@
             if (txCtx.source === 'existing') logLine(`Transmission (befintlig): ${tx} [${dirName}]`);
 
             // Säkerställ att indexdata/scanData följer med varje vald transmission
-            if (shouldRefreshScanData) {
+            if (needs.shouldRefreshScanData) {
               await refreshFeetdataAndScanData({
                 baseUrl,
                 scannerId: sid,
@@ -1413,9 +1530,9 @@
               const name = (item.relPath.split(/[\\/]/).pop()) || item.file.name;
               const kind = classify(name);
               // Ladda alltid BMP (arch/foot3d/pronator) för att säkerställa processning; gate endast report/models
-              if (kind === 'report' && !needReport) continue;
-              if (kind === 'modelL' && !needModelL) continue;
-              if (kind === 'modelR' && !needModelR) continue;
+              if (kind === 'report' && !needs.needReport) continue;
+              if (kind === 'modelL' && !needs.needModelL) continue;
+              if (kind === 'modelR' && !needs.needModelR) continue;
               const contentType = getWhitelistedItemContentType(item, name);
               try {
                 if (item?.path) {
@@ -1443,9 +1560,7 @@
               for (let attempt=1; attempt<=3; attempt++) {
                 await new Promise(r => setTimeout(r, attempt===1 ? 1000 : attempt===2 ? 2000 : 3000));
                 try {
-                  verifyResp = await postJson(`${baseUrl}/api/scanners/upload-manual-file`, {
-                    store_name: store, user_name: user, phone, scanTime, checkOnly: true
-                  });
+                  verifyResp = await runScanPreflight(baseUrl, store, identity);
                   if (isPortalComplete(verifyResp)) break;
                 } catch {}
               }
@@ -1526,36 +1641,19 @@
               if (!items.length) { logLine(`[${dirEntry.name}] Inga filer att ladda upp.`); continue; }
 
               const dirName = dirEntry.name;
-              const parts   = dirName.split(' ');
-              const phone   = (parts[0] && /[0-9+]/.test(parts[0][0])) ? parts[0] : '';
-              const user    = phone ? parts.slice(1).join(' ') : dirName;
               const folderScanTime = new Date(Math.max(...items.map(i => i.mtimeMs))).toISOString();
-              const scanContext = resolveScanContext(csvRows, user, phone, folderScanTime);
-              const scanTime = scanContext.scanTime;
+              const identity = resolveScanFolderIdentity(csvRows, dirName, folderScanTime);
+              logIdentityResolution(dirEntry.name, identity);
+              const { user, phone, scanTime, scanContext } = identity;
               if (scanContext.scanTimeSource === 'csv' && scanTime !== folderScanTime) {
                 logLine(`[${dirName}] använder CSV ScanTime i preflight: ${scanTime} (lokal filtidsfallback: ${folderScanTime})`);
               }
 
-              // Preflight
-              const pre = await postJson(`${baseUrl}/api/scanners/upload-manual-file`, {
-                checkOnly: true, store_name: store, user_name: user, phone, scanTime
-              });
-              const miss = pre.missing || {};
-              const det = pre.missingDetailed || {};
-              const refreshInfo = scanContext.refreshInfo;
-              const needFeet = needsFeetRefresh(det);
-              const shouldRefreshScanData = needFeet && refreshInfo.canRefresh;
-              const lack = describeMissing(pre);
-              logLine(`[${dirName}] i huvudapp: complete=${pre.complete ? 'ja' : 'nej'}, saknar: ${lack}`);
-              const needReport = !!(det.report ?? miss.report);
-              const needModelL = !!(det.modelL ?? miss.modelL);
-              const needModelR = !!(det.modelR ?? miss.modelR);
-              const needArchL = !!det.archL;
-              const needArchR = !!det.archR;
-              const needFoot3dL = !!det.foot3dL;
-              const needFoot3dR = !!det.foot3dR;
-              if (!shouldRefreshScanData && !needFeet && !needReport && !needModelL && !needModelR && !needArchL && !needArchR && !needFoot3dL && !needFoot3dR) {
-                // Already complete → skip
+              const pre = await runScanPreflight(baseUrl, store, identity);
+              const needs = evaluateUploadNeeds(pre, scanContext);
+              logLine(`[${dirName}] i huvudapp: complete=${pre.complete ? 'ja' : 'nej'}, saknar: ${needs.lack}`);
+              if (!needs.need) {
+                logLine(`[${dirName}] Komplett i huvudappen – hoppar över.`);
                 continue;
               }
 
@@ -1573,7 +1671,7 @@
               if (txCtx.source === 'existing') logLine(`Transmission (befintlig): ${tx} [${dirName}]`);
 
               // Säkerställ att indexdata/scanData följer med varje vald transmission
-              if (shouldRefreshScanData) {
+              if (needs.shouldRefreshScanData) {
                 await refreshFeetdataAndScanData({
                   baseUrl,
                   scannerId: sid,
@@ -1605,9 +1703,9 @@
                   return 'other';
                 })();
                 // Ladda alltid BMP (arch/foot3d/pronator); gate endast report/models
-                if (kind === 'report' && !needReport) continue;
-                if (kind === 'modelL' && !needModelL) continue;
-                if (kind === 'modelR' && !needModelR) continue;
+                if (kind === 'report' && !needs.needReport) continue;
+                if (kind === 'modelL' && !needs.needModelL) continue;
+                if (kind === 'modelR' && !needs.needModelR) continue;
 
                 const contentType = guessContentTypeByName(item.name);
                 const dataBase64 = `data:${contentType};base64,${binary}`;
@@ -1632,9 +1730,7 @@
               
               // Verifiera att transmission är komplett
               await new Promise(r => setTimeout(r, 2000)); // Vänta 2s för processing
-              const verifyResp = await postJson(`${baseUrl}/api/scanners/upload-manual-file`, {
-                store_name: store, user_name: user, phone, scanTime, checkOnly: true
-              });
+              const verifyResp = await runScanPreflight(baseUrl, store, identity);
               if (!isPortalComplete(verifyResp)) {
                 const missing = describeMissing(verifyResp);
                 logLine(`⚠️ Verifiering misslyckades för ${dirName}: saknar ${missing}`);

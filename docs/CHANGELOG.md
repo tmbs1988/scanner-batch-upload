@@ -1,3 +1,9 @@
+## 0.1.61 (2026-06-06)
+- Fix: auto-läge använder samma `parseFolderName` + CSV-identitetslösning som manuellt läge (underscore-mappar `070…_Efternamn`).
+- Fix: preflight använder kanoniskt namn/telefon från CSV när mappnamnet bara har efternamn → kompletta patienter markeras korrekt i torrkörning.
+- Fix: telefon normaliseras (07…/46…/0046…) vid CSV- och servermatchning.
+- Fix: namnmatchning tolererar efternamn-only mot fullständigt namn i CSV och preflight.
+
 ## 0.1.60 (2026-06-02)
 - Fix: återinfört init av transmission när preflight (`checkOnly`) inte hittar befintlig post.
 - Ny patient/skanning: `upload-manual-file` init skapar eller matchar transmission, därefter upload + finalize + `process-transmission` (skapar patient vid behov).
